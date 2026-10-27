@@ -1,0 +1,108 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidPlayerProgress(data, userId) {
+      return data.keys().hasAll([
+          'uid',
+          'displayName',
+          'bestScore',
+          'highestUnlockedStage',
+          'totalCoins',
+          'runsPlayed',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'displayName',
+          'bestScore',
+          'highestUnlockedStage',
+          'totalCoins',
+          'runsPlayed',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string &&
+        data.uid.size() >= 1 &&
+        data.uid.size() <= 128 &&
+        data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == userId &&
+        data.displayName is string &&
+        data.displayName.size() >= 1 &&
+        data.displayName.size() <= 60 &&
+        data.bestScore is int &&
+        data.bestScore >= 0 &&
+        data.bestScore <= 99999999 &&
+        data.highestUnlockedStage is int &&
+        data.highestUnlockedStage >= 1 &&
+        data.highestUnlockedStage <= 10 &&
+        data.totalCoins is int &&
+        data.totalCoins >= 0 &&
+        data.totalCoins <= 9999999 &&
+        data.runsPlayed is int &&
+        data.runsPlayed >= 0 &&
+        data.runsPlayed <= 999999 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    match /playerProgress/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isOwner(userId) &&
+        isValidPlayerProgress(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isOwner(userId) &&
+        isValidPlayerProgress(incoming(), userId) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'bestScore',
+          'highestUnlockedStage',
+          'totalCoins',
+          'runsPlayed',
+          'updatedAt'
+        ]);
+
+      allow delete: if false;
+    }
+  }
+}

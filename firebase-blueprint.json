@@ -1,0 +1,68 @@
+{
+  "entities": {
+    "PlayerProgress": {
+      "title": "PlayerProgress",
+      "description": "Stores a player's roguelike sanctuary progression, unlocked stage level, high score, and accumulated solar coins.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Immutable Firebase Auth UID of the player.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display name of the Solar Warden.",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "bestScore": {
+          "type": "number",
+          "description": "Highest score achieved across all runs."
+        },
+        "highestUnlockedStage": {
+          "type": "number",
+          "description": "Highest stage level unlocked (1 to 10)."
+        },
+        "totalCoins": {
+          "type": "number",
+          "description": "Current Solar Coins balance carried by the player."
+        },
+        "runsPlayed": {
+          "type": "number",
+          "description": "Total number of dungeon runs completed or attempted."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "bestScore",
+        "highestUnlockedStage",
+        "totalCoins",
+        "runsPlayed",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/playerProgress/{userId}": {
+      "schema": {
+        "$ref": "#/entities/PlayerProgress"
+      },
+      "description": "Per-user progression document keyed by the authenticated user's UID."
+    }
+  }
+}

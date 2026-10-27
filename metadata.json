@@ -1,0 +1,6 @@
+{
+  "name": "Eclipse Chronicle: Pixel Arena",
+  "description": "Tactical 2D dark-fantasy pixel arena action roguelite where a Solar Warden battles telegraphed umbral legions across the Eclipse Sanctuary.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
