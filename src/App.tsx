@@ -13,6 +13,7 @@ import {
   awakenStance,
   buildRankedLeaderboard,
   buyMerchantItem,
+  createEnemy,
   createInitialWorldState,
   cycleActiveFamiliar,
   detonateSolarBrazier,
@@ -36,7 +37,9 @@ import {
   grantPlayerXp,
   HazardKind,
   hireOrEquipFamiliar,
+  isBossOrEclipseCandidate,
   LeaderboardCategory,
+  MAX_PLAYER_LEVEL,
   MAX_STAGE_LEVEL,
   pushCombatLog,
   RunSnapshot,
@@ -48,6 +51,7 @@ import {
   transitionToRoom,
   triggerSolarMeltdown,
   triggerThermalShock,
+  triggerTotalEclipseEvent,
   USABLE_ITEM_KEYS,
   USABLE_ITEMS,
   UsableItemId,
@@ -71,6 +75,7 @@ import {
 } from './components/GameIcons';
 import {
   auth,
+  formatFirebaseAuthError,
   LeaderboardEntry,
   onAuthStateChanged,
   signInWithGooglePopup,
@@ -161,14 +166,6 @@ function saveRunsPlayed(runs: number): void {
 
 function loadHighestUnlockedStage(): number {
   try {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('unlockall') === '1') return MAX_STAGE_LEVEL;
-      const stageParam = parseInt(params.get('stage') || '0', 10);
-      if (stageParam >= 1 && stageParam <= MAX_STAGE_LEVEL) {
-        return Math.max(stageParam, 1);
-      }
-    }
     const raw = localStorage.getItem(STORAGE_UNLOCKED_STAGE_KEY);
     const parsed = raw ? parseInt(raw, 10) : 1;
     return Number.isFinite(parsed) && parsed >= 1
@@ -212,7 +209,10 @@ function loadLocalLeaderboardRecord(defaultSeed: string): SanctumLeaderboardReco
         uid: p.uid || 'local_warden',
         displayName: p.displayName || 'Solar Warden (You)',
         bestScore: Math.max(0, Number(p.bestScore || loadBestScore() || 1240)),
-        highestStage: Math.max(1, Math.min(10, Number(p.highestStage || loadHighestUnlockedStage() || 1))),
+        highestStage: Math.max(
+          1,
+          Math.min(MAX_STAGE_LEVEL, Number(p.highestStage || loadHighestUnlockedStage() || 1))
+        ),
         fastestClearTimeSec: Math.max(1, Number(p.fastestClearTimeSec || 148)),
         dailySeed: p.dailySeed || defaultSeed,
         dailyScore: Math.max(0, Number(p.dailyScore || 0)),
@@ -276,6 +276,7 @@ function getInitialPhaseFromUrl(): GamePhase {
     params.get('awakened') === '1' ||
     params.get('evolved') === '1' ||
     params.get('reactions') === '1' ||
+    params.get('eclipse') !== null ||
     params.get('companion') !== null ||
     params.get('familiar') !== null ||
     params.get('mode') === 'daily' ||
@@ -328,6 +329,28 @@ function buildInitialWorld(
         e1.hp = e1.maxHp;
         applyEnemyDebuff(e1, 'burned', 5.5, undefined, undefined, 3);
         triggerSolarMeltdown(world, e1);
+      }
+    }
+    if (params.get('eclipse') !== null) {
+      let boss = world.enemies.find((e) => e.archetype === 'archon');
+      if (!boss) {
+        boss = createEnemy(
+          world.nextEntityId++,
+          'archon',
+          600,
+          220,
+          world.stageLevel,
+          Math.max(1, world.bossRushCycle)
+        );
+        world.enemies.unshift(boss);
+      }
+      boss.hp = Math.round(boss.maxHp * 0.45);
+      triggerTotalEclipseEvent(world, boss);
+      if (params.get('eclipse') === 'vulnerable') {
+        const brazier = world.hazards.find((h) => h.kind === 'solar_brazier');
+        if (brazier) {
+          detonateSolarBrazier(world, brazier);
+        }
       }
     }
   }
@@ -387,6 +410,10 @@ export default function App() {
     const cherubRem = w.player.cherubShieldActive
       ? 0
       : Math.max(0, Math.ceil(20 - w.player.cherubShieldTimer));
+    const activeBoss =
+      w.enemies.find((e) => e.aiState !== 'ko' && e.archetype === 'archon') ??
+      w.enemies.find((e) => e.aiState !== 'ko' && isBossOrEclipseCandidate(w, e)) ??
+      null;
     return {
       gameMode: w.gameMode,
       dailySeed: w.dailySeed,
@@ -420,8 +447,13 @@ export default function App() {
       collectedRelics: [...w.collectedRelics],
       lastAwakenedStance: w.lastAwakenedStance,
       awakeningBannerActive: w.awakeningBannerTimer > 0,
-      bossHpPercent: null,
-      bossName: null,
+      bossHp: activeBoss ? Math.max(0, Math.round(activeBoss.hp)) : null,
+      bossMaxHp: activeBoss ? Math.max(1, Math.round(activeBoss.maxHp)) : null,
+      bossHpPercent: activeBoss ? Math.round((activeBoss.hp / activeBoss.maxHp) * 100) : null,
+      bossName: activeBoss ? ENEMY_ARCHETYPE_CATALOG[activeBoss.archetype].name : null,
+      totalEclipseActive: w.totalEclipseActive,
+      bossVulnerabilityTimer: Number(w.bossVulnerabilityTimer.toFixed(1)),
+      bossVulnerabilityMaxTimer: w.bossVulnerabilityMaxTimer,
       skills: learnedSkills,
       skillChoices: [...w.skillChoices],
       relicChoices: [...w.relicChoices],
@@ -554,8 +586,8 @@ export default function App() {
       setAuthStatusText('Signing in...');
       await signInWithGooglePopup();
       setAuthStatusText('Cloud Progress Synced');
-    } catch {
-      setAuthStatusText('Sign-in cancelled');
+    } catch (err) {
+      setAuthStatusText(formatFirebaseAuthError(err));
     }
   }, []);
 
@@ -944,7 +976,7 @@ export default function App() {
           {/* Top Bar: Personal Best + Global Leaderboard + Account Login / Cloud Save Status */}
           <div className="w-full max-w-5xl flex flex-wrap items-center justify-between gap-3 text-xs tracking-wider text-[#d6cbb9]/85 font-mono-tabular pointer-events-auto">
             <div className="flex flex-wrap items-center gap-3">
-              <span>ROGUELIKE SANCTUARY · STAGES 1–10</span>
+              <span>ROGUELIKE SANCTUARY · STAGES 1–30 · MAX LV.{MAX_PLAYER_LEVEL}</span>
               <span className="text-[#fde68a]">
                 BEST: {Math.max(hud.bestScore, initialBest)} · FASTEST:{' '}
                 {formatSpeedrunTime(localLeaderboardRecord.fastestClearTimeSec)}
@@ -1022,7 +1054,7 @@ export default function App() {
                 }`}
               >
                 <div>STANDARD CHRONICLE</div>
-                <div className="text-[10px] font-normal text-[#38bdf8]">Stages 1–10 Campaign</div>
+                <div className="text-[10px] font-normal text-[#38bdf8]">Stages 1–30 Campaign</div>
               </button>
 
               <button
@@ -1076,22 +1108,22 @@ export default function App() {
               </button>
             </div>
 
-            {/* MODE PANEL A: Stage 1 to 10 Roguelike Level Selector */}
+            {/* MODE PANEL A: Stage 1 to 30 Roguelike Level Selector */}
             {selectedMode === 'standard' && (
               <div
                 aria-label="Select Sanctuary Stage"
-                className="mt-2.5 w-full bg-[#120f1a]/92 border border-[#3b2d4a] rounded-md p-3 shadow-[0_10px_28px_rgba(0,0,0,0.85)]"
+                className="mt-2.5 w-full bg-[#120f1a]/92 border border-[#3b2d4a] rounded-md p-2.5 shadow-[0_10px_28px_rgba(0,0,0,0.85)]"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono-tabular text-[#fde68a] mb-2">
-                  <span>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono-tabular text-[#fde68a] mb-1.5">
+                  <span className="truncate">
                     STAGE {selectedStageSpec.stage}: {selectedStageSpec.name.toUpperCase()} ({selectedStageSpec.subtitle})
                   </span>
-                  <span className="text-[#c4b9a5]">
+                  <span className="text-[#c4b9a5] shrink-0">
                     UNLOCKED {highestUnlockedStage}/{MAX_STAGE_LEVEL}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5">
+                <div className="grid grid-cols-6 sm:grid-cols-10 gap-1">
                   {STAGE_CATALOG.map((st) => {
                     const isUnlocked = st.stage <= highestUnlockedStage;
                     const isSelected = st.stage === selectedStage;
@@ -1114,17 +1146,16 @@ export default function App() {
                             setHud(buildHudFromWorld(worldRef.current));
                           }
                         }}
-                        className={`flex flex-col items-center justify-center py-1.5 px-1 rounded border font-mono-tabular transition-colors ${
+                        className={`flex items-center justify-between py-1 px-1.5 rounded border font-mono-tabular transition-colors ${
                           !isUnlocked
                             ? 'bg-[#0c0a12] border-[#1f192b] text-[#574c68] opacity-55 cursor-not-allowed'
                             : isSelected
-                            ? 'bg-[#2a1f3d] border-[#f59e0b] text-[#fde68a] cursor-pointer shadow-[0_0_12px_rgba(245,158,11,0.35)]'
+                            ? 'bg-[#2a1f3d] border-[#f59e0b] text-[#fde68a] cursor-pointer shadow-[0_0_10px_rgba(245,158,11,0.35)]'
                             : 'bg-[#171324] border-[#312642] text-[#d6cbb9] hover:border-[#fde68a] cursor-pointer'
                         }`}
                       >
-                        <span className="text-[10px] text-[#a39887]">LV</span>
-                        <span className="text-sm font-bold leading-tight">{st.stage}</span>
-                        <span className="text-[9px] text-[#38bdf8]">{st.roomCount}R</span>
+                        <span className="text-[11px] font-bold leading-none">S{st.stage}</span>
+                        <span className="text-[8.5px] text-[#38bdf8] leading-none">{st.roomCount}R</span>
                       </button>
                     );
                   })}
@@ -1395,7 +1426,7 @@ export default function App() {
               {/* Solar Level & XP Progress Bar */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-mono-tabular font-bold uppercase tracking-widest text-[#fde047] w-14">
-                  LV. {hud.level}
+                  LV.{hud.level}/{MAX_PLAYER_LEVEL}
                 </span>
                 <div className="w-28 h-1.5 bg-[#09080d] rounded-sm overflow-hidden relative border border-[#422006]">
                   <div
@@ -1900,18 +1931,109 @@ export default function App() {
                 )}
               </div>
 
-              {/* Boss Health Bar when Archon Boss is active */}
+              {/* Boss Health Bar & Total Eclipse / Vulnerability Window Banner */}
               {hud.bossHpPercent !== null && (
-                <div className="hidden md:flex flex-col items-center bg-[#120f1a]/90 border border-[#f59e0b]/60 rounded-md px-5 py-1.5 shadow-[0_6px_20px_rgba(0,0,0,0.85)]">
-                  <span className="text-[10px] font-mono-tabular uppercase tracking-widest text-[#fde68a]">
-                    {hud.bossName} · STAGE {hud.stageLevel} SOVEREIGN
-                  </span>
+                <div
+                  data-testid="hud-boss-bar"
+                  className={`hidden md:flex flex-col items-center rounded-md px-5 py-1.5 shadow-[0_6px_20px_rgba(0,0,0,0.85)] transition-colors ${
+                    hud.totalEclipseActive
+                      ? hud.bossVulnerabilityTimer > 0
+                        ? 'bg-[#1a1308]/95 border border-[#facc15]'
+                        : 'bg-[#0b0714]/95 border border-[#a855f7]/80'
+                      : 'bg-[#120f1a]/90 border border-[#f59e0b]/60'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono-tabular uppercase tracking-widest text-[#fde68a]">
+                      {hud.bossName} · STAGE {hud.stageLevel} SOVEREIGN
+                    </span>
+                    <span
+                      data-testid="hud-boss-hp-readout"
+                      className="text-[9.5px] font-mono-tabular font-bold text-[#f4efe6]"
+                    >
+                      {hud.bossHp !== null && hud.bossMaxHp !== null
+                        ? `${hud.bossHp.toLocaleString()} / ${hud.bossMaxHp.toLocaleString()} HP (${hud.bossHpPercent}%)`
+                        : `${hud.bossHpPercent}%`}
+                    </span>
+                  </div>
                   <div className="w-64 h-2 bg-[#09080d] border border-[#4c1d95] rounded-sm overflow-hidden mt-1">
                     <div
-                      className="h-full bg-[#f43f5e] transition-all duration-100"
+                      className={`h-full transition-all duration-100 ${
+                        hud.bossVulnerabilityTimer > 0
+                          ? 'bg-[#facc15]'
+                          : hud.totalEclipseActive
+                          ? 'bg-[#a855f7]'
+                          : 'bg-[#f43f5e]'
+                      }`}
                       style={{ width: `${hud.bossHpPercent}%` }}
                     />
                   </div>
+                </div>
+              )}
+
+              {/* Total Eclipse Arena Event & Boss Vulnerability Window Tactical Banner */}
+              {hud.totalEclipseActive && (
+                <div
+                  data-testid="hud-total-eclipse-banner"
+                  data-eclipse-vulnerable={hud.bossVulnerabilityTimer > 0 ? 'true' : 'false'}
+                  className={`flex items-center gap-2.5 rounded-md px-3.5 py-1.5 border shadow-[0_6px_22px_rgba(0,0,0,0.9)] pointer-events-auto transition-all ${
+                    hud.bossVulnerabilityTimer > 0
+                      ? 'bg-[#1c1306]/95 border-[#facc15] text-[#fef08a]'
+                      : 'bg-[#0d0718]/95 border-[#a855f7]/80 text-[#e9d5ff]'
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full shrink-0 ${
+                      hud.bossVulnerabilityTimer > 0
+                        ? 'bg-[#facc15] animate-ping'
+                        : 'bg-[#a855f7] animate-pulse'
+                    }`}
+                  />
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider">
+                        {hud.bossVulnerabilityTimer > 0
+                          ? `BOSS VULNERABILITY WINDOW · ${hud.bossVulnerabilityTimer.toFixed(1)}S`
+                          : 'TOTAL ECLIPSE PHASE · UMBRAL WARD ACTIVE'}
+                      </span>
+                      <span
+                        className={`text-[9px] font-mono-tabular px-1.5 py-0.5 rounded-xs border ${
+                          hud.bossVulnerabilityTimer > 0
+                            ? 'bg-[#422006] border-[#facc15]/60 text-[#fde047]'
+                            : 'bg-[#2e1065] border-[#c084fc]/50 text-[#d8b4fe]'
+                        }`}
+                      >
+                        {hud.bossVulnerabilityTimer > 0 ? '+50% BOSS DMG' : '-25% BOSS DMG · STRIKE BRAZIER'}
+                      </span>
+                    </div>
+                    <span className="text-[9px] font-mono-tabular text-[#c4b5d9]">
+                      {hud.bossVulnerabilityTimer > 0
+                        ? 'Solar Brazier flare shattered the Umbral Ward! Unleash critical finishers now!'
+                        : 'Darkness narrows arena sightlines — ignite a Solar Brazier to shatter Boss defenses!'}
+                    </span>
+                  </div>
+                  {hud.hazards.some((h) => h.kind === 'solar_brazier' && h.cooldown <= 0) && (
+                    <button
+                      type="button"
+                      data-testid="eclipse-ignite-brazier-btn"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        const w = worldRef.current;
+                        const readyBrazier = w.hazards.find(
+                          (h) => h.kind === 'solar_brazier' && h.cooldown <= 0
+                        );
+                        if (readyBrazier) {
+                          detonateSolarBrazier(w, readyBrazier);
+                          soundEngine.playNova();
+                          setHud(buildHudFromWorld(w));
+                        }
+                      }}
+                      className="ml-1 px-2.5 py-1 rounded-xs bg-[#f59e0b]/25 hover:bg-[#f59e0b]/40 border border-[#facc15]/80 text-[#fef08a] text-[9.5px] font-mono-tabular font-bold uppercase tracking-wider cursor-pointer transition-colors"
+                      title="Ignite nearest ready Solar Brazier to open the Boss Vulnerability Window"
+                    >
+                      Ignite Brazier
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -2043,6 +2165,16 @@ export default function App() {
                             {entry.kind === 'solar_meltdown' && (
                               <svg viewBox="0 0 16 16" className="w-3 h-3 fill-current" aria-hidden="true">
                                 <path d="M8 1l5 2.2v4.3c0 3.5-2.1 6.1-5 7.3-2.9-1.2-5-3.8-5-7.3V3.2L8 1zm.7 2.4L6.2 8.2h2.4l-1.3 4.4 3.5-5.2H8.4l.3-4z" />
+                              </svg>
+                            )}
+                            {entry.kind === 'total_eclipse' && (
+                              <svg viewBox="0 0 16 16" className="w-3 h-3 fill-current" aria-hidden="true">
+                                <path d="M8 1.5a6.5 6.5 0 106.2 8.4A5.2 5.2 0 017.8 2a6.4 6.4 0 01.2-.5z" />
+                              </svg>
+                            )}
+                            {entry.kind === 'eclipse_vulnerability' && (
+                              <svg viewBox="0 0 16 16" className="w-3 h-3 fill-current" aria-hidden="true">
+                                <path d="M8 1l1.8 4.2L14 7l-4.2 1.8L8 13l-1.8-4.2L2 7l4.2-1.8L8 1z" />
                               </svg>
                             )}
                           </span>
@@ -3175,7 +3307,7 @@ export default function App() {
                           {entry.bestScore.toLocaleString()}
                         </td>
                         <td className="py-2 px-3 text-right text-[#10b981] font-bold">
-                          S{entry.highestStage}/10
+                          S{entry.highestStage}/{MAX_STAGE_LEVEL}
                         </td>
                         <td className="py-2 px-3 text-right text-[#38bdf8]">
                           {formatSpeedrunTime(entry.fastestClearTimeSec)}

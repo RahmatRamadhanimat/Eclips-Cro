@@ -32,6 +32,7 @@ import {
   getActiveCombatLogEntries,
   getBestiaryEntry,
   getDailyChallengeConfig,
+  getEclipseLightSources,
   getEnemyActiveDebuffs,
   getHealthPipStates,
   getPlayerActiveDebuffs,
@@ -40,6 +41,7 @@ import {
   grantPlayerXp,
   hireOrEquipFamiliar,
   isStanceAwakened,
+  MAX_PLAYER_LEVEL,
   MAX_STAGE_LEVEL,
   pushCombatLog,
   SANCTUM_HAZARD_CATALOG,
@@ -48,9 +50,11 @@ import {
   stepArenaWorld,
   tickCombatLog,
   transitionToRoom,
+  triggerBossVulnerabilityWindow,
   triggerScreenShake,
   triggerSolarMeltdown,
   triggerThermalShock,
+  triggerTotalEclipseEvent,
   useInventorySlot,
   WEAPON_EVOLUTIONS,
 } from './rules';
@@ -182,12 +186,18 @@ test('level up triggers 3 skill choices and selecting a skill activates its comb
   assert.equal(enemy.hp < initialHp, true, 'Orbiting Solar Blades should slice nearby enemy');
 });
 
-test('stages 1 to 10 generate 4 to 10 connected rooms with escalating room & monster counts', () => {
+test('stages 1 to 30 generate 4 to 14 connected rooms with escalating room & monster counts and fortified Boss HP', () => {
+  assert.equal(MAX_STAGE_LEVEL, 30);
+  assert.equal(MAX_PLAYER_LEVEL, 30);
   assert.equal(STAGE_CATALOG.length, MAX_STAGE_LEVEL);
   let previousRoomCount = 4;
   for (let stage = 1; stage <= MAX_STAGE_LEVEL; stage++) {
     const rooms = generateDungeonMap(stage);
-    assert.equal(rooms.length >= 4 && rooms.length <= 10, true, `Stage ${stage} must have 4-10 rooms`);
+    assert.equal(
+      rooms.length >= 4 && rooms.length <= 14,
+      true,
+      `Stage ${stage} must have 4-14 rooms (got ${rooms.length})`
+    );
     assert.equal(rooms.length >= previousRoomCount, true, 'Room count should never decrease on later stages');
     previousRoomCount = rooms.length;
     assert.equal(rooms[rooms.length - 1].kind, 'boss');
@@ -199,13 +209,27 @@ test('stages 1 to 10 generate 4 to 10 connected rooms with escalating room & mon
     }
   }
 
+  // Verify substantially increased Boss HP across Stages 1, 10, and 30
+  assert.equal(ENEMY_ARCHETYPE_CATALOG.archon.baseHp >= 1800, true, 'Archon base HP must be >= 1800');
+  const stage1Archon = createEnemy(7001, 'archon', 600, 220, 1, 3, 4);
+  const stage10Archon = createEnemy(7002, 'archon', 600, 220, 10, 9, 10);
+  const stage30Archon = createEnemy(7003, 'archon', 600, 220, 30, 13, 14);
+  assert.equal(stage1Archon.maxHp >= 1800, true, 'Stage 1 Archon must have at least 1800 HP');
+  assert.equal(stage10Archon.maxHp > stage1Archon.maxHp * 2.5, true, 'Stage 10 Archon HP must scale strongly');
+  assert.equal(stage30Archon.maxHp > 25000, true, `Stage 30 Archon HP must be colossal (got ${stage30Archon.maxHp})`);
+
+  // Verify Player Level progression scales up to MAX_PLAYER_LEVEL (Level 30)
+  const lvlWorld = createInitialWorldState('playing', 0, 1);
+  grantPlayerXp(lvlWorld, 999999);
+  assert.equal(lvlWorld.player.level, MAX_PLAYER_LEVEL, 'Player must be able to reach Level 30');
+
   const stage1Profile = getStageDifficultyProfile(1, 0, 4);
-  const stage9Profile = getStageDifficultyProfile(9, 6, 9);
-  assert.equal(stage9Profile.hpMultiplier > stage1Profile.hpMultiplier, true);
-  assert.equal(stage9Profile.damageMultiplier > stage1Profile.damageMultiplier, true);
-  assert.equal(stage9Profile.cooldownMultiplier < stage1Profile.cooldownMultiplier, true);
-  assert.equal(stage9Profile.unlockedArchetypes.length > stage1Profile.unlockedArchetypes.length, true);
-  assert.equal(stage9Profile.unlockedArchetypes.includes('eclipse_inquisitor'), true);
+  const stage30Profile = getStageDifficultyProfile(30, 13, 14);
+  assert.equal(stage30Profile.hpMultiplier > stage1Profile.hpMultiplier, true);
+  assert.equal(stage30Profile.damageMultiplier > stage1Profile.damageMultiplier, true);
+  assert.equal(stage30Profile.cooldownMultiplier < stage1Profile.cooldownMultiplier, true);
+  assert.equal(stage30Profile.unlockedArchetypes.length > stage1Profile.unlockedArchetypes.length, true);
+  assert.equal(stage30Profile.unlockedArchetypes.includes('eclipse_inquisitor'), true);
 
   const stage1World = createInitialWorldState('playing', 0, 1);
   const stage8World = createInitialWorldState('playing', 0, 8);
@@ -543,7 +567,7 @@ test('daily challenge seed determinism, boss rush / endless abyss gauntlet, and 
       uid: 'player_hero',
       displayName: 'Champion Warden',
       bestScore: 25000,
-      highestStage: 10,
+      highestStage: 30,
       fastestClearTimeSec: 88,
       dailySeed: 'SOLAR-20261029',
       dailyScore: 19500,
@@ -1034,5 +1058,60 @@ test('Elemental Reaction & Combo System triggers Thermal Shock (Burned + Slowed)
   assert.equal(dmgDealt, 135, 'Armor Sundered enemy must take +35% damage (135 instead of 100)');
 });
 
+test('Interactive Boss Phase Mechanics: Total Eclipse triggers at <= 50% Boss HP and igniting a Solar Brazier opens Boss Vulnerability Window', () => {
+  const world = createInitialWorldState('playing', 0, 1);
+  const archon = createEnemy(9980, 'archon', 600, 220, 1);
+  archon.maxHp = 1000;
+  archon.hp = 540; // Just above 50%
+  world.enemies = [archon];
 
+  assert.equal(world.totalEclipseActive, false, 'Total Eclipse must be inactive above 50% Boss HP');
 
+  // 1. Deal damage to bring Archon below 50% HP (<= 500) -> triggers Total Eclipse
+  const simEv = stepArenaWorld(world, emptyInput(), 0.016);
+  damageEnemy(world, archon, 80, 0, 120, 0.02, simEv, false, false);
+
+  assert.equal(archon.hp <= 500, true, 'Archon HP must drop to or below 50%');
+  assert.equal(world.totalEclipseActive, true, 'Dropping Boss HP <= 50% must activate Total Eclipse');
+  assert.equal(simEv.totalEclipseTriggered, true, 'Simulation event must record totalEclipseTriggered');
+  assert.equal(
+    getActiveCombatLogEntries(world).some((e) => e.kind === 'total_eclipse'),
+    true,
+    'Combat log must announce Total Eclipse!'
+  );
+
+  // 2. Verify visibility light sources include Player and Solar Braziers in the room
+  const lightSources = getEclipseLightSources(world);
+  assert.equal(lightSources.some((s) => s.kind === 'player'), true, 'Light sources must include player aura');
+  assert.equal(
+    lightSources.some((s) => s.kind === 'brazier_lit' || s.kind === 'brazier_ignited'),
+    true,
+    'Light sources must include room Solar Braziers'
+  );
+
+  // 3. While Total Eclipse is active and no Brazier has been ignited, Boss has Umbral Ward (-25% damage taken)
+  const hpBeforeWardHit = archon.hp;
+  damageEnemy(world, archon, 100, 0, 80, 0.02, simEv, false, false);
+  const wardedDamage = hpBeforeWardHit - archon.hp;
+  assert.equal(wardedDamage, 75, 'Umbral Ward during Total Eclipse must reduce damage to Boss by 25% (75 instead of 100)');
+
+  // 4. Igniting a Solar Brazier during Total Eclipse triggers the Boss Vulnerability Window
+  const brazier = world.hazards.find((h) => h.kind === 'solar_brazier');
+  assert.ok(brazier, 'Room must contain a Solar Brazier');
+  detonateSolarBrazier(world, brazier!, simEv);
+  assert.equal(brazier!.cooldown > 0, true, 'Solar Brazier must enter cooldown after detonation');
+  assert.equal(world.bossVulnerabilityTimer > 0, true, 'Igniting Solar Brazier during Total Eclipse must open Boss Vulnerability Window');
+  assert.equal(simEv.bossVulnerabilityTriggered, true, 'Simulation event must record bossVulnerabilityTriggered');
+  assert.equal(archon.sunderTimer > 0, true, 'Boss Vulnerability Window must sunder Boss armor');
+  assert.equal(
+    getActiveCombatLogEntries(world).some((e) => e.kind === 'eclipse_vulnerability'),
+    true,
+    'Combat log must announce Boss Vulnerability Window!'
+  );
+
+  // 5. During Boss Vulnerability Window, Boss takes +50% Eclipse Vulnerability x 1.35x Sundered amplification
+  const hpBeforeVulnHit = archon.hp;
+  damageEnemy(world, archon, 100, 0, 80, 0.02, simEv, false, false);
+  const vulnDamage = hpBeforeVulnHit - archon.hp;
+  assert.equal(vulnDamage > 140, true, `Boss must take amplified vulnerability damage (got ${vulnDamage})`);
+});

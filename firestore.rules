@@ -64,7 +64,7 @@ service cloud.firestore {
         data.bestScore <= 99999999 &&
         data.highestUnlockedStage is int &&
         data.highestUnlockedStage >= 1 &&
-        data.highestUnlockedStage <= 10 &&
+        data.highestUnlockedStage <= 30 &&
         data.totalCoins is int &&
         data.totalCoins >= 0 &&
         data.totalCoins <= 9999999 &&
@@ -117,7 +117,7 @@ service cloud.firestore {
         data.bestScore <= 99999999 &&
         data.highestStage is int &&
         data.highestStage >= 1 &&
-        data.highestStage <= 10 &&
+        data.highestStage <= 30 &&
         data.fastestClearTimeSec is int &&
         data.fastestClearTimeSec >= 1 &&
         data.fastestClearTimeSec <= 86400 &&

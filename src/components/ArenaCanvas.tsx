@@ -19,10 +19,12 @@ import {
   GamePhase,
   getActiveCombatLogEntries,
   getDoorWorldPosition,
+  getEclipseLightSources,
   getEnemyActiveDebuffs,
   getPlayerActiveDebuffs,
   getRoomEnemyDebuffSummary,
   InventorySlot,
+  isBossOrEclipseCandidate,
   RelicOption,
   RunSnapshot,
   SCREEN_SHAKE_PROFILES,
@@ -81,6 +83,8 @@ export interface HudDiscreteState {
   collectedRelics: string[];
   lastAwakenedStance: WeaponStanceId | null;
   awakeningBannerActive: boolean;
+  bossHp: number | null;
+  bossMaxHp: number | null;
   bossHpPercent: number | null;
   bossName: string | null;
   skills: Array<{ id: SkillId; rank: number }>;
@@ -96,6 +100,9 @@ export interface HudDiscreteState {
   enemyDebuffSummary: { burnedCount: number; slowedCount: number; sunderedCount: number };
   thermalShockCount: number;
   solarMeltdownCount: number;
+  totalEclipseActive: boolean;
+  bossVulnerabilityTimer: number;
+  bossVulnerabilityMaxTimer: number;
   combatLog: CombatLogEntry[];
 }
 
@@ -637,7 +644,13 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       }
 
       // Throttle discrete HUD synchronization
-      const boss = world.enemies.find((e) => e.archetype === 'archon' && e.aiState !== 'ko');
+      const boss =
+        world.enemies.find((e) => e.archetype === 'archon' && e.aiState !== 'ko') ??
+        (world.gameMode === 'boss_rush'
+          ? world.enemies.find((e) => isBossOrEclipseCandidate(world, e) && e.aiState !== 'ko')
+          : undefined);
+      const bossHp = boss ? Math.max(0, Math.round(boss.hp)) : null;
+      const bossMaxHp = boss ? Math.max(1, Math.round(boss.maxHp)) : null;
       const bossHpPct = boss ? Math.max(0, Math.round((boss.hp / boss.maxHp) * 100)) : null;
       const quantizedEssence =
         p.essence >= p.maxEssence ? p.maxEssence : Math.floor(p.essence / 5) * 5;
@@ -706,13 +719,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         .map((d) => `${d.id}:${d.stacks}:${Math.ceil(d.remainingSeconds * 5)}`)
         .join(',');
       const enemyDebuffSummary = getRoomEnemyDebuffSummary(world);
-      const enemyDebuffSig = `${enemyDebuffSummary.burnedCount}:${enemyDebuffSummary.slowedCount}:${enemyDebuffSummary.sunderedCount}:${world.thermalShockCount}:${world.solarMeltdownCount}`;
+      const eclipseSig = `${world.totalEclipseActive ? 1 : 0}:${Math.ceil(world.bossVulnerabilityTimer * 5)}`;
+      const enemyDebuffSig = `${enemyDebuffSummary.burnedCount}:${enemyDebuffSummary.slowedCount}:${enemyDebuffSummary.sunderedCount}:${world.thermalShockCount}:${world.solarMeltdownCount}:${eclipseSig}`;
       const combatLog = getActiveCombatLogEntries(world);
       const combatLogSig = combatLog
         .map((c) => `${c.id}:${c.detail}:${Math.floor(c.age * 8)}`)
         .join(',');
 
-      const hudHash = `${world.gameMode}|${world.dailySeed}|${world.bossRushCycle}|${world.bossRushWavesCleared}|${quantizedTime}|${world.stageLevel}|${Math.round(p.hp)}|${p.maxHp}|${quantizedEssence}|${p.maxEssence}|${p.level}|${Math.round(p.xp)}|${p.xpToNextLevel}|${p.coins}|${invSig}|${world.currentRoomIndex}|${roomsSig}|${world.wave}|${Math.round(world.score)}|${Math.round(world.bestScore)}|${world.comboCount}|${p.stance}|${awakenedSig}|${p.dawnbladeSwingCount}|${p.activeFamiliar}|${unlockedFamSig}|${p.cherubShieldActive}|${cherubRem}|${relicsSig}|${world.lastAwakenedStance}|${bannerActive}|${bossHpPct}|${skillsSig}|${world.skillChoices.length}|${world.relicChoices.length}|${defeatedSig}|${activeArchSig}|${hoverSig}|${hazardsSig}|${nearbySig}|${p.damageMultiplier}|${playerDebuffSig}|${enemyDebuffSig}|${combatLogSig}`;
+      const hudHash = `${world.gameMode}|${world.dailySeed}|${world.bossRushCycle}|${world.bossRushWavesCleared}|${quantizedTime}|${world.stageLevel}|${Math.round(p.hp)}|${p.maxHp}|${quantizedEssence}|${p.maxEssence}|${p.level}|${Math.round(p.xp)}|${p.xpToNextLevel}|${p.coins}|${invSig}|${world.currentRoomIndex}|${roomsSig}|${world.wave}|${Math.round(world.score)}|${Math.round(world.bestScore)}|${world.comboCount}|${p.stance}|${awakenedSig}|${p.dawnbladeSwingCount}|${p.activeFamiliar}|${unlockedFamSig}|${p.cherubShieldActive}|${cherubRem}|${relicsSig}|${world.lastAwakenedStance}|${bannerActive}|${bossHp}|${bossMaxHp}|${bossHpPct}|${skillsSig}|${world.skillChoices.length}|${world.relicChoices.length}|${defeatedSig}|${activeArchSig}|${hoverSig}|${hazardsSig}|${nearbySig}|${p.damageMultiplier}|${playerDebuffSig}|${enemyDebuffSig}|${combatLogSig}`;
       if (hudHash !== lastHudHash) {
         lastHudHash = hudHash;
         callbacksRef.current.onSyncHud({
@@ -748,8 +762,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           collectedRelics: [...world.collectedRelics],
           lastAwakenedStance: world.lastAwakenedStance,
           awakeningBannerActive: bannerActive,
+          bossHp,
+          bossMaxHp,
           bossHpPercent: bossHpPct,
-          bossName: boss ? 'Archon of the Corona' : null,
+          bossName: boss
+            ? boss.archetype === 'archon'
+              ? 'Archon of the Corona'
+              : ENEMY_ARCHETYPE_CATALOG[boss.archetype].name
+            : null,
           skills: learnedSkills,
           skillChoices: world.skillChoices,
           relicChoices: world.relicChoices,
@@ -763,6 +783,9 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           enemyDebuffSummary,
           thermalShockCount: world.thermalShockCount,
           solarMeltdownCount: world.solarMeltdownCount,
+          totalEclipseActive: world.totalEclipseActive,
+          bossVulnerabilityTimer: Number(world.bossVulnerabilityTimer.toFixed(1)),
+          bossVulnerabilityMaxTimer: world.bossVulnerabilityMaxTimer,
           combatLog,
         });
       }
@@ -802,6 +825,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         lastShakeReasonAttr = world.lastScreenShakeReason;
         canvas.dataset.lastShakeReason = world.lastScreenShakeReason;
       }
+      canvas.dataset.totalEclipse = world.totalEclipseActive ? 'true' : 'false';
+      canvas.dataset.bossVulnerable = world.bossVulnerabilityTimer > 0.04 ? 'true' : 'false';
 
       const centerScreenX = renderOffsetX + ARENA_WIDTH * 0.5 * renderScale;
       const centerScreenY = renderOffsetY + ARENA_HEIGHT * 0.5 * renderScale;
@@ -828,6 +853,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       drawLightningArcs(ctx, world);
       drawProjectiles(ctx, world);
       drawParticles(ctx, particlePool);
+      drawTotalEclipseLighting(ctx, world, now / 1000);
       drawCriticalStrikeCallout(ctx, world);
       drawScreenShakeImpactRim(ctx, world, shakeSample);
       drawWaveBanner(ctx, world);
@@ -1120,11 +1146,11 @@ function drawSanctumHazards(
 
       // Detonation shockwave pulse when struck
       if (hazard.pulseTimer > 0) {
-        const prog = 1 - hazard.pulseTimer / 0.48;
-        const blastR = r + prog * (hazard.blastRadius - r);
+        const prog = Math.max(0, Math.min(1, 1 - hazard.pulseTimer / 0.72));
+        const blastR = Math.max(r, r + prog * (hazard.blastRadius - r));
         ctx.strokeStyle = `rgba(251, 146, 60, ${(1 - prog) * 0.9})`;
         ctx.fillStyle = `rgba(249, 115, 22, ${(1 - prog) * 0.22})`;
-        ctx.lineWidth = 4.5 * (1 - prog * 0.5);
+        ctx.lineWidth = Math.max(1, 4.5 * (1 - prog * 0.5));
         ctx.beginPath();
         ctx.arc(0, 0, blastR, 0, Math.PI * 2);
         ctx.fill();
@@ -1210,13 +1236,13 @@ function drawSanctumHazards(
 
       // Activation pulse ring
       if (hazard.pulseTimer > 0) {
-        const prog = 1 - hazard.pulseTimer / 0.6;
+        const prog = Math.max(0, Math.min(1, 1 - hazard.pulseTimer / 0.6));
         ctx.strokeStyle = isCursed
           ? `rgba(225, 29, 72, ${(1 - prog) * 0.9})`
           : `rgba(16, 185, 129, ${(1 - prog) * 0.9})`;
         ctx.lineWidth = 4;
         ctx.beginPath();
-        ctx.arc(0, 0, r + prog * 65, 0, Math.PI * 2);
+        ctx.arc(0, 0, Math.max(r, r + prog * 65), 0, Math.PI * 2);
         ctx.stroke();
       }
 
@@ -2597,4 +2623,170 @@ function drawScreenShakeImpactRim(
   ctx.lineWidth = 6 + ratio * 8;
   ctx.strokeRect(20, 20, world.arenaWidth - 40, world.arenaHeight - 40);
   ctx.restore();
+}
+
+let cachedEclipseCanvas: HTMLCanvasElement | null = null;
+let cachedEclipseCtx: CanvasRenderingContext2D | null = null;
+
+function drawTotalEclipseLighting(
+  ctx: CanvasRenderingContext2D,
+  world: ArenaWorldState,
+  timeSec: number
+): void {
+  const eclipseStrength = Math.max(
+    world.eclipseTransitionProgress,
+    world.totalEclipseActive ? 1.0 : 0
+  );
+  if (eclipseStrength <= 0.02) return;
+
+  if (typeof document !== 'undefined' && !cachedEclipseCanvas) {
+    cachedEclipseCanvas = document.createElement('canvas');
+    cachedEclipseCanvas.width = ARENA_WIDTH;
+    cachedEclipseCanvas.height = ARENA_HEIGHT;
+    cachedEclipseCtx = cachedEclipseCanvas.getContext('2d');
+  }
+
+  const isVulnerable = world.bossVulnerabilityTimer > 0.04;
+  const baseDarkAlpha = (isVulnerable ? 0.58 : 0.86) * eclipseStrength;
+  const lightSources = getEclipseLightSources(world);
+
+  if (cachedEclipseCanvas && cachedEclipseCtx) {
+    const mCtx = cachedEclipseCtx;
+    mCtx.clearRect(0, 0, world.arenaWidth, world.arenaHeight);
+
+    // 1. Fill arena with deep Total Eclipse umbral darkness
+    mCtx.globalCompositeOperation = 'source-over';
+    mCtx.fillStyle = isVulnerable
+      ? `rgba(14, 7, 26, ${baseDarkAlpha.toFixed(2)})`
+      : `rgba(5, 3, 12, ${baseDarkAlpha.toFixed(2)})`;
+    mCtx.fillRect(0, 0, world.arenaWidth, world.arenaHeight);
+
+    // 2. Punch smooth radial visibility cones around Player and lit/ignited Solar Braziers
+    mCtx.globalCompositeOperation = 'destination-out';
+    for (const src of lightSources) {
+      const flicker =
+        src.kind === 'player'
+          ? Math.sin(timeSec * 6) * 4
+          : Math.sin(timeSec * 11 + src.x) * 7;
+      const outerR = Math.max(40, src.radius + flicker);
+      const innerR = outerR * 0.28;
+      const grad = mCtx.createRadialGradient(src.x, src.y, innerR, src.x, src.y, outerR);
+      grad.addColorStop(0, `rgba(0, 0, 0, ${src.intensity})`);
+      grad.addColorStop(0.65, `rgba(0, 0, 0, ${(src.intensity * 0.72).toFixed(2)})`);
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      mCtx.fillStyle = grad;
+      mCtx.beginPath();
+      mCtx.arc(src.x, src.y, outerR, 0, Math.PI * 2);
+      mCtx.fill();
+    }
+
+    // Also punch a subtle umbral rim around the Boss so its silhouette and corona stay readable
+    for (const enemy of world.enemies) {
+      if (enemy.aiState === 'ko' || !isBossOrEclipseCandidate(world, enemy)) continue;
+      const bossLightR = isVulnerable ? 155 : 95;
+      const grad = mCtx.createRadialGradient(
+        enemy.x,
+        enemy.y,
+        bossLightR * 0.2,
+        enemy.x,
+        enemy.y,
+        bossLightR
+      );
+      grad.addColorStop(0, isVulnerable ? 'rgba(0, 0, 0, 0.92)' : 'rgba(0, 0, 0, 0.62)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      mCtx.fillStyle = grad;
+      mCtx.beginPath();
+      mCtx.arc(enemy.x, enemy.y, bossLightR, 0, Math.PI * 2);
+      mCtx.fill();
+    }
+
+    mCtx.globalCompositeOperation = 'source-over';
+    ctx.drawImage(cachedEclipseCanvas, 0, 0);
+  }
+
+  // 3. Draw warm Solar Brazier sanctuary beacon rings & callouts on top of the eclipse shroud
+  for (const hazard of world.hazards) {
+    if (hazard.kind !== 'solar_brazier') continue;
+    const isIgnited = hazard.cooldown > 0 || hazard.pulseTimer > 0;
+    const beaconR = isIgnited ? 250 : 165;
+    ctx.save();
+    ctx.translate(hazard.x, hazard.y);
+
+    ctx.strokeStyle = isIgnited
+      ? 'rgba(253, 224, 71, 0.72)'
+      : 'rgba(251, 146, 60, 0.55)';
+    ctx.lineWidth = isIgnited ? 2.8 : 2.0;
+    ctx.setLineDash(isIgnited ? [10, 6] : [6, 6]);
+    ctx.beginPath();
+    ctx.arc(0, 0, beaconR, timeSec * 0.8, timeSec * 0.8 + Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.font = 'bold 10px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = isIgnited ? '#fde047' : '#fed7aa';
+    ctx.fillText(
+      isIgnited
+        ? 'SOLAR SANCTUARY FLARE ACTIVE'
+        : 'IGNITE BRAZIER [HIT] → PIERCE ECLIPSE & WEAKEN BOSS',
+      0,
+      -hazard.radius - 16
+    );
+    ctx.restore();
+  }
+
+  // 4. Draw Boss Total Eclipse Umbral Ward OR Solar Vulnerability Window reticle above Boss
+  for (const enemy of world.enemies) {
+    if (enemy.aiState === 'ko' || !isBossOrEclipseCandidate(world, enemy)) continue;
+    ctx.save();
+    ctx.translate(enemy.x, enemy.y);
+
+    if (isVulnerable) {
+      // Shattered golden-crimson Vulnerability Window reticle
+      const pulseR = enemy.radius + 18 + Math.sin(timeSec * 14) * 3;
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([8, 4]);
+      ctx.beginPath();
+      ctx.arc(0, 0, pulseR, -timeSec * 3, -timeSec * 3 + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const tag = `VULNERABLE! +50% DMG (${world.bossVulnerabilityTimer.toFixed(1)}s)`;
+      ctx.font = 'bold 10.5px "JetBrains Mono", monospace';
+      const tw = ctx.measureText(tag).width + 14;
+      ctx.fillStyle = 'rgba(69, 10, 25, 0.94)';
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.6;
+      ctx.fillRect(-tw * 0.5, -enemy.radius - 52, tw, 18);
+      ctx.strokeRect(-tw * 0.5, -enemy.radius - 52, tw, 18);
+      ctx.fillStyle = '#fde047';
+      ctx.textAlign = 'center';
+      ctx.fillText(tag, 0, -enemy.radius - 39);
+    } else {
+      // Umbral Eclipse Ward dark lunar corona ring
+      const wardR = enemy.radius + 16 + Math.sin(timeSec * 8) * 2;
+      ctx.strokeStyle = '#c084fc';
+      ctx.fillStyle = 'rgba(88, 28, 135, 0.24)';
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.arc(0, 0, wardR, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      const tag = 'ECLIPSE WARD (-25% DMG) · HIT SOLAR BRAZIER!';
+      ctx.font = 'bold 10px "JetBrains Mono", monospace';
+      const tw = ctx.measureText(tag).width + 14;
+      ctx.fillStyle = 'rgba(24, 10, 42, 0.94)';
+      ctx.strokeStyle = '#c084fc';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(-tw * 0.5, -enemy.radius - 52, tw, 18);
+      ctx.strokeRect(-tw * 0.5, -enemy.radius - 52, tw, 18);
+      ctx.fillStyle = '#e9d5ff';
+      ctx.textAlign = 'center';
+      ctx.fillText(tag, 0, -enemy.radius - 39);
+    }
+
+    ctx.restore();
+  }
 }

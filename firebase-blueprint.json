@@ -24,7 +24,7 @@
         },
         "highestUnlockedStage": {
           "type": "number",
-          "description": "Highest stage level unlocked (1 to 10)."
+          "description": "Highest stage level unlocked (1 to 30)."
         },
         "totalCoins": {
           "type": "number",
@@ -80,7 +80,7 @@
         },
         "highestStage": {
           "type": "number",
-          "description": "Furthest stage reached or cleared (1 to 10)."
+          "description": "Furthest stage reached or cleared (1 to 30)."
         },
         "fastestClearTimeSec": {
           "type": "number",

@@ -117,10 +117,48 @@ export interface LeaderboardEntry {
   isCloud?: boolean;
 }
 
+let activeSignInPromise: Promise<User | null> | null = null;
+
 export async function signInWithGooglePopup(): Promise<User | null> {
+  if (activeSignInPromise) {
+    return activeSignInPromise;
+  }
   const provider = new GoogleAuthProvider();
-  const result = await signInWithPopup(auth, provider);
-  return result.user;
+  provider.setCustomParameters({ prompt: 'select_account' });
+  activeSignInPromise = signInWithPopup(auth, provider)
+    .then((result) => result.user)
+    .finally(() => {
+      activeSignInPromise = null;
+    });
+  return activeSignInPromise;
+}
+
+export function formatFirebaseAuthError(error: unknown): string {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+      : '';
+  const hostname = typeof window !== 'undefined' ? window.location.hostname : 'domain ini';
+
+  if (code === 'auth/unauthorized-domain') {
+    return `Domain belum diizinkan di Firebase Auth (${hostname}). Tambahkan ke Firebase Console → Authentication → Settings → Authorized domains.`;
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'Popup login diblokir browser. Izinkan popup atau buka di Chrome/Safari standar (bukan browser dalam aplikasi).';
+  }
+  if (code === 'auth/cancelled-popup-request') {
+    return 'Permintaan popup sebelumnya masih berjalan. Tunggu sebentar lalu coba lagi.';
+  }
+  if (code === 'auth/operation-not-supported-in-this-environment') {
+    return 'Browser ini memblokir penyimpanan pihak ketiga (Third-Party Cookies / WebView). Buka link di Chrome/Browser utama.';
+  }
+  if (code === 'auth/popup-closed-by-user') {
+    return 'Popup tertutup sebelum login selesai (Pastikan domain Shared URL sudah ada di Authorized Domains & OAuth Consent Screen tidak membatasi akun).';
+  }
+  if (code) {
+    return `Gagal login Google (${code})`;
+  }
+  return 'Sign-in cancelled';
 }
 
 export async function signOutAccount(): Promise<void> {
@@ -168,7 +206,7 @@ export function subscribeToCloudProgress(
           uid: String(data.uid || user.uid),
           displayName: sanitizeDisplayName(data.displayName || user.displayName),
           bestScore: clampInt(Number(data.bestScore || 0), 0, 99999999),
-          highestUnlockedStage: clampInt(Number(data.highestUnlockedStage || 1), 1, 10),
+          highestUnlockedStage: clampInt(Number(data.highestUnlockedStage || 1), 1, 30),
           totalCoins: clampInt(Number(data.totalCoins || 15), 0, 9999999),
           runsPlayed: clampInt(Number(data.runsPlayed || 0), 0, 999999),
         });
@@ -199,7 +237,7 @@ export async function syncPlayerProgressToCloud(
 
   const safeDisplayName = sanitizeDisplayName(user.displayName);
   const safeBestScore = clampInt(progress.bestScore, 0, 99999999);
-  const safeHighestStage = clampInt(progress.highestUnlockedStage, 1, 10);
+  const safeHighestStage = clampInt(progress.highestUnlockedStage, 1, 30);
   const safeTotalCoins = clampInt(progress.totalCoins, 0, 9999999);
   const safeRunsPlayed = clampInt(progress.runsPlayed, 0, 999999);
 
@@ -225,7 +263,7 @@ export async function syncPlayerProgressToCloud(
         displayName: safeDisplayName,
         bestScore: Math.max(clampInt(Number(existingData.bestScore || 0), 0, 99999999), safeBestScore),
         highestUnlockedStage: Math.max(
-          clampInt(Number(existingData.highestUnlockedStage || 1), 1, 10),
+          clampInt(Number(existingData.highestUnlockedStage || 1), 1, 30),
           safeHighestStage
         ),
         totalCoins: safeTotalCoins,
@@ -266,7 +304,7 @@ export function subscribeToGlobalLeaderboard(
           uid: String(data.uid || docSnap.id),
           displayName: sanitizeDisplayName(data.displayName),
           bestScore: clampInt(Number(data.bestScore ?? 0), 0, 99999999),
-          highestStage: clampInt(Number(data.highestStage ?? 1), 1, 10),
+          highestStage: clampInt(Number(data.highestStage ?? 1), 1, 30),
           fastestClearTimeSec: clampInt(Number(data.fastestClearTimeSec ?? 180), 1, 86400),
           dailySeed: sanitizeDailySeed(data.dailySeed),
           dailyScore: clampInt(Number(data.dailyScore ?? 0), 0, 99999999),
@@ -308,7 +346,7 @@ export async function submitLeaderboardEntryToCloud(
 
   const safeDisplayName = sanitizeDisplayName(entry.displayName || user.displayName);
   const safeBestScore = clampInt(entry.bestScore, 0, 99999999);
-  const safeHighestStage = clampInt(entry.highestStage, 1, 10);
+  const safeHighestStage = clampInt(entry.highestStage, 1, 30);
   const safeFastestTime = clampInt(entry.fastestClearTimeSec, 1, 86400);
   const safeDailySeed = sanitizeDailySeed(entry.dailySeed);
   const safeDailyScore = clampInt(entry.dailyScore, 0, 99999999);
@@ -352,7 +390,7 @@ export async function submitLeaderboardEntryToCloud(
       await updateDoc(docRef, {
         displayName: safeDisplayName,
         bestScore: Math.max(clampInt(Number(ex.bestScore ?? 0), 0, 99999999), safeBestScore),
-        highestStage: Math.max(clampInt(Number(ex.highestStage ?? 1), 1, 10), safeHighestStage),
+        highestStage: Math.max(clampInt(Number(ex.highestStage ?? 1), 1, 30), safeHighestStage),
         fastestClearTimeSec: nextFastest,
         dailySeed: nextDailySeed,
         dailyScore: nextDailyScore,

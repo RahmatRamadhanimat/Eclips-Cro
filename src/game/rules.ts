@@ -165,13 +165,15 @@ export interface SkillChoiceOption {
   description: string;
 }
 
+export const MAX_PLAYER_LEVEL = 30;
+
 export const SKILL_CATALOG: SkillSpec[] = [
   {
     id: 'solar_orbit',
     name: 'Orbiting Solar Blades',
     categoryTag: 'AUTONOMOUS ORBIT',
     accentColor: '#f59e0b',
-    maxRank: 3,
+    maxRank: 5,
     getDescription: (nextRank) =>
       `Summon ${nextRank + 1} rotating sun-blades around you that slice enemies on contact for ${16 + nextRank * 8} damage.`,
   },
@@ -180,7 +182,7 @@ export const SKILL_CATALOG: SkillSpec[] = [
     name: 'Astral Chain Lightning',
     categoryTag: 'ARC DISCHARGE',
     accentColor: '#38bdf8',
-    maxRank: 3,
+    maxRank: 5,
     getDescription: (nextRank) =>
       `Weapon hits unleash a lightning bolt that leaps to ${nextRank} nearby target${nextRank > 1 ? 's' : ''} for ${14 + nextRank * 8} shock damage.`,
   },
@@ -189,7 +191,7 @@ export const SKILL_CATALOG: SkillSpec[] = [
     name: 'Ignis Dash Trail',
     categoryTag: 'DASH HAZARD',
     accentColor: '#fb7185',
-    maxRank: 3,
+    maxRank: 5,
     getDescription: (nextRank) =>
       `Dashing leaves scorching solar embers for ${(2.0 + nextRank * 0.5).toFixed(1)}s that burn enemies for ${16 + nextRank * 7} damage.`,
   },
@@ -198,7 +200,7 @@ export const SKILL_CATALOG: SkillSpec[] = [
     name: 'Phantom Strike Echo',
     categoryTag: 'WEAPON MASTERY',
     accentColor: '#c084fc',
-    maxRank: 3,
+    maxRank: 5,
     getDescription: (nextRank) =>
       `+${nextRank * 18}% melee cleave reach & +${nextRank * 10} bonus strike damage; Astral Bow fires +${nextRank * 2} extra arrows.`,
   },
@@ -207,18 +209,18 @@ export const SKILL_CATALOG: SkillSpec[] = [
     name: 'Eclipse Supernova',
     categoryTag: 'NOVA OVERDRIVE',
     accentColor: '#fbbf24',
-    maxRank: 3,
+    maxRank: 5,
     getDescription: (nextRank) =>
-      `[E] Solar Nova radius +${nextRank * 32}px, cooldown -${nextRank * 18}%, and refunds 12 Essence on multi-hit.`,
+      `[E] Solar Nova radius +${nextRank * 32}px, cooldown -${Math.min(72, nextRank * 15)}%, and refunds 12 Essence on multi-hit.`,
   },
   {
     id: 'dawn_aegis',
     name: 'Dawn Aegis Ward',
     categoryTag: 'SOLAR BARRIER',
     accentColor: '#10b981',
-    maxRank: 3,
+    maxRank: 5,
     getDescription: (nextRank) =>
-      `Forms a sacred barrier every ${(8.5 - nextRank * 1.5).toFixed(1)}s that negates 1 incoming attack and blasts nearby foes.`,
+      `Forms a sacred barrier every ${Math.max(2.5, 8.5 - nextRank * 1.2).toFixed(1)}s that negates 1 incoming attack and blasts nearby foes.`,
   },
 ];
 
@@ -342,9 +344,9 @@ export const FAMILIAR_CATALOG: Record<FamiliarId, FamiliarSpec> = {
 };
 
 // ============================================================================
-// 10 STAGE LEVELS & MULTI-ROOM DUNGEON MAP SYSTEM
+// 30 STAGE LEVELS & MULTI-ROOM DUNGEON MAP SYSTEM
 // ============================================================================
-export const MAX_STAGE_LEVEL = 10;
+export const MAX_STAGE_LEVEL = 30;
 
 export interface StageLevelSpec {
   stage: number;
@@ -356,6 +358,7 @@ export interface StageLevelSpec {
 }
 
 export const STAGE_CATALOG: StageLevelSpec[] = [
+  // Tier I: Sanctum Reclamation (Stages 1–10)
   { stage: 1, name: 'Outer Courtyard', subtitle: '4 Sanctum Rooms · Stalker & Wraith Patrol', roomCount: 4, floorTint: '#12101b', borderTint: '#3b2d4a' },
   { stage: 2, name: 'Hall of Dusk', subtitle: '5 Sanctum Rooms · Frost Revenant & Pyromancer', roomCount: 5, floorTint: '#141122', borderTint: '#433259' },
   { stage: 3, name: 'Obsidian Cloister', subtitle: '5 Sanctum Rooms · Juggernaut & Sentinel', roomCount: 5, floorTint: '#16111e', borderTint: '#4c345c' },
@@ -365,7 +368,29 @@ export const STAGE_CATALOG: StageLevelSpec[] = [
   { stage: 7, name: 'Mirror Spire', subtitle: '8 Sanctum Rooms · Phantom Convergence', roomCount: 8, floorTint: '#151226', borderTint: '#513b78' },
   { stage: 8, name: 'Corona Forge', subtitle: '8 Sanctum Rooms · Molten Siege Phalanx', roomCount: 8, floorTint: '#1c1410', borderTint: '#6e4526' },
   { stage: 9, name: 'Abyssal Threshold', subtitle: '9 Sanctum Rooms · Grand Inquisitor Conclave', roomCount: 9, floorTint: '#120e1e', borderTint: '#582c82' },
-  { stage: 10, name: 'Throne of Eclipse', subtitle: '10 Sanctum Rooms · Sovereign Apex', roomCount: 10, floorTint: '#1a0d18', borderTint: '#7a284b' },
+  { stage: 10, name: 'Throne of Eclipse', subtitle: '10 Sanctum Rooms · Sovereign Vanguard', roomCount: 10, floorTint: '#1a0d18', borderTint: '#7a284b' },
+  // Tier II: Astral Ascendancy (Stages 11–20)
+  { stage: 11, name: 'Umbral Bastion', subtitle: '10 Sanctum Rooms · Shadow-Step Phalanx', roomCount: 10, floorTint: '#140f24', borderTint: '#4f357a' },
+  { stage: 12, name: 'Cryo-Star Vault', subtitle: '10 Sanctum Rooms · Glacial Singularity Ring', roomCount: 10, floorTint: '#0f1826', borderTint: '#2c5882' },
+  { stage: 13, name: 'Pyre of the Ancients', subtitle: '10 Sanctum Rooms · Solar Zealot Crusade', roomCount: 10, floorTint: '#211210', borderTint: '#803c28' },
+  { stage: 14, name: 'Necropolis of Glass', subtitle: '11 Sanctum Rooms · Undying Weaver Covenant', roomCount: 11, floorTint: '#101c1a', borderTint: '#2a6b5d' },
+  { stage: 15, name: 'Tribunal Citadel', subtitle: '11 Sanctum Rooms · Twin Inquisitor Executioners', roomCount: 11, floorTint: '#1c1026', borderTint: '#6e328a' },
+  { stage: 16, name: 'Gravity Well Nexus', subtitle: '11 Sanctum Rooms · Event Horizon Crossfire', roomCount: 11, floorTint: '#130e24', borderTint: '#5c2d91' },
+  { stage: 17, name: 'Blood Moon Gallery', subtitle: '11 Sanctum Rooms · Crimson Juggernaut Stampede', roomCount: 11, floorTint: '#220d16', borderTint: '#8c2447' },
+  { stage: 18, name: 'Solaris Observatory', subtitle: '12 Sanctum Rooms · Cardinal Laser Matrix', roomCount: 12, floorTint: '#121828', borderTint: '#3b649c' },
+  { stage: 19, name: 'Sanctum of Ash', subtitle: '12 Sanctum Rooms · Scorched Corona Crucible', roomCount: 12, floorTint: '#1f130e', borderTint: '#874c24' },
+  { stage: 20, name: 'Eclipse Spire Apex', subtitle: '12 Sanctum Rooms · Arch-Sovereign Ascendancy', roomCount: 12, floorTint: '#1e0b22', borderTint: '#91296e' },
+  // Tier III: Sovereign Omega Chronicle (Stages 21–30)
+  { stage: 21, name: 'Riftwalker Outpost', subtitle: '12 Sanctum Rooms · Hyper-Velocity Assassins', roomCount: 12, floorTint: '#0e1722', borderTint: '#2e6f7d' },
+  { stage: 22, name: 'Molten Core Foundry', subtitle: '12 Sanctum Rooms · Supernova Siege Battery', roomCount: 12, floorTint: '#24110c', borderTint: '#993d1f' },
+  { stage: 23, name: 'Cathedral of Chains', subtitle: '13 Sanctum Rooms · Grand Warden Inquisition', roomCount: 13, floorTint: '#190f24', borderTint: '#6c2b8c' },
+  { stage: 24, name: 'Starlight Mausoleum', subtitle: '13 Sanctum Rooms · Astral Phantom Legion', roomCount: 13, floorTint: '#101429', borderTint: '#3e4d9c' },
+  { stage: 25, name: 'Singularity Core', subtitle: '13 Sanctum Rooms · Void Collapse Convergence', roomCount: 13, floorTint: '#160b26', borderTint: '#7a25a8' },
+  { stage: 26, name: 'Infernal Sun Forge', subtitle: '13 Sanctum Rooms · Blazing Corona Vanguard', roomCount: 13, floorTint: '#26100e', borderTint: '#ad3526' },
+  { stage: 27, name: 'Obsidian Pantheon', subtitle: '14 Sanctum Rooms · Immortal Sentinel Garrison', roomCount: 14, floorTint: '#14111f', borderTint: '#63478c' },
+  { stage: 28, name: 'Nightfall Horizon', subtitle: '14 Sanctum Rooms · Eternal Eclipse Conclave', roomCount: 14, floorTint: '#11091c', borderTint: '#752291' },
+  { stage: 29, name: 'Empyrean Crucible', subtitle: '14 Sanctum Rooms · Sovereign Honor Guard', roomCount: 14, floorTint: '#210c1c', borderTint: '#a12362' },
+  { stage: 30, name: 'Omega Eclipse Throne', subtitle: '14 Sanctum Rooms · Supreme Archon of the Corona', roomCount: 14, floorTint: '#240816', borderTint: '#c91c50' },
 ];
 
 export type DoorDirection = 'N' | 'S' | 'E' | 'W';
@@ -616,10 +641,10 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     minStage: 3,
     role: 'controller',
     accentColor: '#38bdf8',
-    baseHp: 98,
+    baseHp: 145,
     baseDamage: 18,
     baseSpeed: 80,
-    xpReward: 70,
+    xpReward: 78,
     coinReward: 16,
     weaknessStance: 'chrono_scythe',
     weaknessSummary: 'Weak to [3] Chrono Scythe (+20% DMG) · Heavy armor cleaves stagger its construct core.',
@@ -633,10 +658,10 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     minStage: 3,
     role: 'juggernaut',
     accentColor: '#f59e0b',
-    baseHp: 115,
+    baseHp: 175,
     baseDamage: 20,
     baseSpeed: 88,
-    xpReward: 75,
+    xpReward: 85,
     coinReward: 16,
     weaknessStance: 'chrono_scythe',
     weaknessSummary: 'Weak to [3] Chrono Scythe (+20% DMG) · High knockback halts its unstoppable march.',
@@ -650,10 +675,10 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     minStage: 4,
     role: 'summoner',
     accentColor: '#34d399',
-    baseHp: 72,
+    baseHp: 96,
     baseDamage: 15,
     baseSpeed: 98,
-    xpReward: 64,
+    xpReward: 72,
     coinReward: 13,
     weaknessStance: 'astral_bow',
     weaknessSummary: 'Weak to [2] Astral Bow (+20% DMG) · Piercing arrows hit both summoned minions and the summoner.',
@@ -667,10 +692,10 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     minStage: 4,
     role: 'controller',
     accentColor: '#c084fc',
-    baseHp: 78,
+    baseHp: 115,
     baseDamage: 17,
     baseSpeed: 92,
-    xpReward: 68,
+    xpReward: 76,
     coinReward: 13,
     weaknessStance: 'astral_bow',
     weaknessSummary: 'Weak to [2] Astral Bow (+20% DMG) · Long-range volleys stay safely outside its gravity well.',
@@ -684,10 +709,10 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     minStage: 5,
     role: 'assassin',
     accentColor: '#facc15',
-    baseHp: 68,
+    baseHp: 92,
     baseDamage: 17,
     baseSpeed: 168,
-    xpReward: 66,
+    xpReward: 74,
     coinReward: 13,
     weaknessStance: 'dawnblade',
     weaknessSummary: 'Weak to [1] Dawnblade (+20% DMG) · Fast strikes duel its frenzied zig-zag rush.',
@@ -701,11 +726,11 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     minStage: 6,
     role: 'elite',
     accentColor: '#e879f9',
-    baseHp: 135,
+    baseHp: 260,
     baseDamage: 21,
     baseSpeed: 122,
-    xpReward: 92,
-    coinReward: 22,
+    xpReward: 115,
+    coinReward: 25,
     weaknessStance: 'chrono_scythe',
     weaknessSummary: 'Weak to [3] Chrono Scythe (+20% DMG) · Crushes its templar ward after a shadow-step.',
     counterTip: 'After it shadow-steps, dodge the aimed golden spear trio before weaving through the 8-way star.',
@@ -718,16 +743,16 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     minStage: 1,
     role: 'boss',
     accentColor: '#fb7185',
-    baseHp: 400,
-    baseDamage: 22,
+    baseHp: 1800,
+    baseDamage: 24,
     baseSpeed: 104,
-    xpReward: 260,
-    coinReward: 45,
+    xpReward: 520,
+    coinReward: 85,
     weaknessStance: 'dawnblade',
     weaknessSummary: 'Weak to [1] Dawnblade (+20% DMG) · Rapid melee hits generate Essence for frequent Solar Novas.',
-    counterTip: 'Move out of the 92px crimson annihilation circle and use Solar Nova [E] to clear its radial orb ring.',
+    counterTip: 'Move out of the 92px crimson annihilation circle and ignite Solar Braziers during Total Eclipse (<=50% HP) to shatter its ward.',
     movementPattern: 'Sanctum center orbital command',
-    attackPattern: 'Multi-phase radial corona barrage + targeted annihilation blast',
+    attackPattern: 'Multi-phase radial corona barrage + targeted annihilation blast + Total Eclipse Ward',
   },
 };
 
@@ -878,7 +903,17 @@ export type CombatLogKind =
   | 'sanctum_blessing'
   | 'aegis_parry'
   | 'thermal_shock'
-  | 'solar_meltdown';
+  | 'solar_meltdown'
+  | 'total_eclipse'
+  | 'eclipse_vulnerability';
+
+export interface EclipseLightSource {
+  x: number;
+  y: number;
+  radius: number;
+  kind: 'player' | 'brazier_lit' | 'brazier_ignited';
+  intensity: number;
+}
 
 export interface CombatLogEntry {
   id: number;
@@ -948,6 +983,18 @@ export const COMBAT_LOG_STYLES: Record<
     borderColor: '#f43f5e',
     bgColor: '#3b0a1e',
     defaultDuration: 4.0,
+  },
+  total_eclipse: {
+    accentColor: '#c084fc',
+    borderColor: '#a855f7',
+    bgColor: '#1e0b36',
+    defaultDuration: 4.5,
+  },
+  eclipse_vulnerability: {
+    accentColor: '#fde047',
+    borderColor: '#fb923c',
+    bgColor: '#3b1706',
+    defaultDuration: 4.5,
   },
 };
 
@@ -1222,6 +1269,11 @@ export interface ArenaWorldState {
   thermalShockCount: number;
   solarMeltdownCount: number;
   lastReactionTriggered: ElementalReactionId | null;
+  totalEclipseActive: boolean;
+  eclipseTransitionProgress: number;
+  eclipseBannerTimer: number;
+  bossVulnerabilityTimer: number;
+  bossVulnerabilityMaxTimer: number;
   nextEntityId: number;
   wave: number;
   totalWaves: number;
@@ -1416,6 +1468,8 @@ export interface SimulationEvents {
   perfectDodge?: boolean;
   relicSynergyTriggered?: boolean;
   elementalReaction?: ElementalReactionId;
+  totalEclipseTriggered?: boolean;
+  bossVulnerabilityTriggered?: boolean;
   screenShakeReason?: ScreenShakeReason;
   enemyDebuffApplied?: ElementalDebuffId;
   playerDebuffApplied?: ElementalDebuffId;
@@ -1450,7 +1504,8 @@ export function clampDt(rawDt: number): number {
 }
 
 export function calculateXpForLevel(level: number): number {
-  return Math.round(60 * Math.pow(1.35, Math.max(0, level - 1)));
+  const safeLevel = Math.max(1, Math.min(MAX_PLAYER_LEVEL, level));
+  return Math.round(60 * Math.pow(1.18, safeLevel - 1) + (safeLevel - 1) * 12);
 }
 
 export function formatSpeedrunTime(seconds: number): string {
@@ -1494,7 +1549,7 @@ export function getDailyChallengeConfig(dateOverride?: string): DailyChallengeCo
   const seedCode = `SOLAR-${compact}`;
   const seedNumber = hashSeedString(seedCode);
 
-  const stageLevel = 3 + (seedNumber % 6); // Deterministic stage between 3 and 8
+  const stageLevel = 3 + (seedNumber % 18); // Deterministic stage between 3 and 20
   const stances: WeaponStanceId[] = ['dawnblade', 'astral_bow', 'chrono_scythe'];
   const awakenedStance = stances[seedNumber % stances.length];
   const awakenedStanceName = WEAPON_EVOLUTIONS[awakenedStance].evolvedName;
@@ -1554,7 +1609,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_valerius',
     displayName: 'Arch-Warden Valerius',
     bestScore: 18450,
-    highestStage: 10,
+    highestStage: 30,
     fastestClearTimeSec: 94,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 14200,
@@ -1566,7 +1621,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_lyra',
     displayName: 'Lyra of the Corona',
     bestScore: 16280,
-    highestStage: 10,
+    highestStage: 28,
     fastestClearTimeSec: 102,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 12950,
@@ -1578,7 +1633,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_kaelen',
     displayName: 'Kaelen Chrono-Reaper',
     bestScore: 14890,
-    highestStage: 9,
+    highestStage: 25,
     fastestClearTimeSec: 111,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 11840,
@@ -1590,7 +1645,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_seraphina',
     displayName: 'Seraphina Dawnstar',
     bestScore: 13120,
-    highestStage: 8,
+    highestStage: 22,
     fastestClearTimeSec: 119,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 10620,
@@ -1602,7 +1657,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_orion',
     displayName: 'Orion Void-Strider',
     bestScore: 11640,
-    highestStage: 8,
+    highestStage: 19,
     fastestClearTimeSec: 128,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 9540,
@@ -1614,7 +1669,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_ignis',
     displayName: 'Solarius Ignis',
     bestScore: 9850,
-    highestStage: 7,
+    highestStage: 16,
     fastestClearTimeSec: 136,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 8420,
@@ -1626,7 +1681,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_nyx',
     displayName: 'Nyx Astral-Weaver',
     bestScore: 8420,
-    highestStage: 6,
+    highestStage: 13,
     fastestClearTimeSec: 145,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 7350,
@@ -1638,7 +1693,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_cassian',
     displayName: 'Cassian Vanguard',
     bestScore: 6940,
-    highestStage: 5,
+    highestStage: 10,
     fastestClearTimeSec: 158,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 6180,
@@ -1650,7 +1705,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_thalassa',
     displayName: 'Thalassa Frost-Bane',
     bestScore: 5480,
-    highestStage: 4,
+    highestStage: 7,
     fastestClearTimeSec: 172,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 4920,
@@ -1662,7 +1717,7 @@ export const DEFAULT_SANCTUM_LEADERBOARD: SanctumLeaderboardRecord[] = [
     uid: 'warden_draven',
     displayName: 'Initiate Draven',
     bestScore: 3820,
-    highestStage: 3,
+    highestStage: 4,
     fastestClearTimeSec: 195,
     dailySeed: 'SOLAR-DAILY',
     dailyScore: 3450,
@@ -2067,6 +2122,8 @@ export function getBestiaryEntry(
   const meta = ENEMY_ARCHETYPE_CATALOG[archetype];
   const profile = getStageDifficultyProfile(stageLevel, roomIdx, totalRooms);
   const stanceSpec = WEAPON_STANCES[meta.weaknessStance];
+  const bossStageSurge =
+    archetype === 'archon' ? 1 + Math.max(0, profile.stageLevel - 1) * 0.08 : 1;
   return {
     id: meta.id,
     name: meta.name,
@@ -2075,7 +2132,7 @@ export function getBestiaryEntry(
     accentColor: meta.accentColor,
     unlocked: defeatedCount > 0,
     defeatedCount,
-    scaledHp: Math.round(meta.baseHp * profile.hpMultiplier),
+    scaledHp: Math.round(meta.baseHp * profile.hpMultiplier * bossStageSurge),
     scaledDamage: Math.round(meta.baseDamage * profile.damageMultiplier),
     scaledSpeed: Math.round(meta.baseSpeed * profile.speedMultiplier),
     xpReward: meta.xpReward,
@@ -2289,7 +2346,7 @@ export function generateDungeonMap(
   const stageSpec = STAGE_CATALOG[clampedStage - 1] ?? STAGE_CATALOG[0];
   const totalRooms = Math.max(4, stageSpec.roomCount);
 
-  // Layout coordinates on a 2D dungeon grid up to 10 rooms so rooms connect via E / N / W / S doors
+  // Layout coordinates on a 2D dungeon grid up to 14 rooms so rooms connect via E / N / W / S doors
   const gridCoords: Array<{ x: number; y: number; name: string }> = [
     { x: 0, y: 0, name: 'Sanctum Entrance' },
     { x: 1, y: 0, name: 'Umbral Gallery' },
@@ -2301,12 +2358,16 @@ export function generateDungeonMap(
     { x: 4, y: -1, name: 'Necro Catacomb' },
     { x: 4, y: -2, name: 'Sentinel Bastion' },
     { x: 5, y: -2, name: 'Corona Altar' },
+    { x: 5, y: -1, name: 'Singularity Atrium' },
+    { x: 6, y: -1, name: 'Solaris Citadel' },
+    { x: 6, y: -2, name: 'Inquisitor Spire' },
+    { x: 7, y: -2, name: 'Sovereign Apex' },
   ];
 
   const rooms: DungeonRoom[] = [];
   for (let i = 0; i < totalRooms; i++) {
     const isBoss = i === totalRooms - 1;
-    const coord = gridCoords[i] ?? { x: i, y: 0, name: `Chamber ${i + 1}` };
+    const coord = gridCoords[i] ?? { x: i, y: -2, name: `Chamber ${i + 1}` };
     const kind: RoomKind =
       i === 0 ? 'entrance' : isBoss ? 'boss' : i === totalRooms - 2 ? 'shrine' : 'combat';
     const formation = selectRoomFormation(clampedStage + (seedOffset % 3), i, totalRooms);
@@ -2369,6 +2430,7 @@ export function createEnemy(
   const hpScale = profile.hpMultiplier;
   const dmgScale = profile.damageMultiplier;
   const spdScale = profile.speedMultiplier;
+  const xpScale = 1 + Math.max(0, stageOrWave - 1) * 0.12;
 
   const baseCommon = {
     id,
@@ -2402,7 +2464,7 @@ export function createEnemy(
   };
 
   if (archetype === 'stalker') {
-    const maxHp = Math.round(50 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.stalker.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2411,12 +2473,12 @@ export function createEnemy(
       speed: Math.round(146 * spdScale),
       damage: Math.round(11 * dmgScale),
       scoreValue: Math.round(120 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 34,
+      xpValue: Math.round(34 * xpScale),
     };
   }
 
   if (archetype === 'wraith') {
-    const maxHp = Math.round(42 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.wraith.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2425,12 +2487,12 @@ export function createEnemy(
       speed: Math.round(180 * spdScale),
       damage: Math.round(13 * dmgScale),
       scoreValue: Math.round(150 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 42,
+      xpValue: Math.round(42 * xpScale),
     };
   }
 
   if (archetype === 'arcanist') {
-    const maxHp = Math.round(46 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.arcanist.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2439,12 +2501,12 @@ export function createEnemy(
       speed: Math.round(114 * spdScale),
       damage: Math.round(14 * dmgScale),
       scoreValue: Math.round(160 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 45,
+      xpValue: Math.round(45 * xpScale),
     };
   }
 
   if (archetype === 'frost_revenant') {
-    const maxHp = Math.round(54 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.frost_revenant.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2453,12 +2515,12 @@ export function createEnemy(
       speed: Math.round(128 * spdScale),
       damage: Math.round(15 * dmgScale),
       scoreValue: Math.round(185 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 52,
+      xpValue: Math.round(52 * xpScale),
     };
   }
 
   if (archetype === 'pyromancer') {
-    const maxHp = Math.round(58 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.pyromancer.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2467,12 +2529,12 @@ export function createEnemy(
       speed: Math.round(106 * spdScale),
       damage: Math.round(16 * dmgScale),
       scoreValue: Math.round(195 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 55,
+      xpValue: Math.round(55 * xpScale),
     };
   }
 
   if (archetype === 'necro_weaver') {
-    const maxHp = Math.round(72 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.necro_weaver.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2481,12 +2543,12 @@ export function createEnemy(
       speed: Math.round(98 * spdScale),
       damage: Math.round(15 * dmgScale),
       scoreValue: Math.round(225 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 64,
+      xpValue: Math.round(72 * xpScale),
     };
   }
 
   if (archetype === 'void_singularity') {
-    const maxHp = Math.round(78 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.void_singularity.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2495,12 +2557,12 @@ export function createEnemy(
       speed: Math.round(92 * spdScale),
       damage: Math.round(17 * dmgScale),
       scoreValue: Math.round(235 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 68,
+      xpValue: Math.round(76 * xpScale),
     };
   }
 
   if (archetype === 'solar_zealot') {
-    const maxHp = Math.round(68 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.solar_zealot.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2509,12 +2571,12 @@ export function createEnemy(
       speed: Math.round(168 * spdScale),
       damage: Math.round(17 * dmgScale),
       scoreValue: Math.round(230 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 66,
+      xpValue: Math.round(74 * xpScale),
     };
   }
 
   if (archetype === 'sentinel') {
-    const maxHp = Math.round(98 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.sentinel.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2524,12 +2586,12 @@ export function createEnemy(
       damage: Math.round(18 * dmgScale),
       flankSign: 1,
       scoreValue: Math.round(240 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 70,
+      xpValue: Math.round(78 * xpScale),
     };
   }
 
   if (archetype === 'juggernaut') {
-    const maxHp = Math.round(115 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.juggernaut.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2539,12 +2601,12 @@ export function createEnemy(
       damage: Math.round(20 * dmgScale),
       flankSign: 1,
       scoreValue: Math.round(260 * (1 + (stageOrWave - 1) * 0.1)),
-      xpValue: 75,
+      xpValue: Math.round(85 * xpScale),
     };
   }
 
   if (archetype === 'eclipse_inquisitor') {
-    const maxHp = Math.round(135 * hpScale);
+    const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.eclipse_inquisitor.baseHp * hpScale);
     return {
       ...baseCommon,
       hp: maxHp,
@@ -2552,13 +2614,14 @@ export function createEnemy(
       radius: 24,
       speed: Math.round(122 * spdScale),
       damage: Math.round(21 * dmgScale),
-      scoreValue: Math.round(320 * (1 + (stageOrWave - 1) * 0.12)),
-      xpValue: 92,
+      scoreValue: Math.round(360 * (1 + (stageOrWave - 1) * 0.12)),
+      xpValue: Math.round(115 * xpScale),
     };
   }
 
-  // Archon Boss
-  const maxHp = Math.round(400 * hpScale);
+  // Archon of the Corona Boss — Substantially fortified Sovereign HP pool across Stages 1–30
+  const bossStageSurge = 1 + Math.max(0, stageOrWave - 1) * 0.08;
+  const maxHp = Math.round(ENEMY_ARCHETYPE_CATALOG.archon.baseHp * hpScale * bossStageSurge);
   return {
     ...baseCommon,
     archetype: 'archon',
@@ -2566,10 +2629,10 @@ export function createEnemy(
     maxHp,
     radius: 36,
     speed: Math.round(104 * spdScale),
-    damage: Math.round(22 * dmgScale),
+    damage: Math.round(24 * dmgScale),
     flankSign: 1,
-    scoreValue: Math.round(1200 * (1 + (stageOrWave - 1) * 0.15)),
-    xpValue: 260,
+    scoreValue: Math.round(1600 * (1 + (stageOrWave - 1) * 0.18)),
+    xpValue: Math.round(520 * xpScale),
   };
 }
 
@@ -2702,6 +2765,11 @@ export function createInitialWorldState(
     thermalShockCount: 0,
     solarMeltdownCount: 0,
     lastReactionTriggered: null,
+    totalEclipseActive: false,
+    eclipseTransitionProgress: 0,
+    eclipseBannerTimer: 0,
+    bossVulnerabilityTimer: 0,
+    bossVulnerabilityMaxTimer: 7.0,
     nextEntityId: 1,
     wave: 1,
     totalWaves: rooms.length,
@@ -2783,6 +2851,10 @@ export function advanceBossRushAbyssCycle(state: ArenaWorldState): number {
   state.vortexVisuals = [];
   state.reactionVisuals = [];
   state.lightningArcs = [];
+  state.totalEclipseActive = false;
+  state.eclipseTransitionProgress = 0;
+  state.eclipseBannerTimer = 0;
+  state.bossVulnerabilityTimer = 0;
   state.enemiesRemainingToSpawn = [...state.rooms[0].roster];
   state.spawnTimer = 1.0;
   state.waveBannerTimer = 2.4;
@@ -3159,6 +3231,162 @@ export function triggerSolarMeltdown(
   }
 
   return flareDmg;
+}
+
+export function isBossOrEclipseCandidate(state: ArenaWorldState, enemy: EnemyEntity): boolean {
+  if (enemy.archetype === 'archon') return true;
+  if (state.gameMode === 'boss_rush' && enemy.archetype === 'eclipse_inquisitor') return true;
+  return false;
+}
+
+export function triggerTotalEclipseEvent(
+  state: ArenaWorldState,
+  bossEnemy?: EnemyEntity,
+  events?: SimulationEvents
+): boolean {
+  const targetBoss =
+    bossEnemy ??
+    state.enemies.find((e) => e.aiState !== 'ko' && isBossOrEclipseCandidate(state, e));
+  if (targetBoss) {
+    targetBoss.phase = Math.max(2, targetBoss.phase);
+  }
+  if (state.totalEclipseActive) return false;
+
+  state.totalEclipseActive = true;
+  state.eclipseTransitionProgress = 1.0;
+  state.eclipseBannerTimer = 3.6;
+  state.bossVulnerabilityTimer = 0;
+  state.hitstopTimer = Math.max(state.hitstopTimer, 0.07);
+  state.cameraTrauma = Math.min(1, state.cameraTrauma + 0.55);
+
+  // Ready all Solar Braziers in the chamber so the player can ignite them to pierce the Total Eclipse
+  for (const hazard of state.hazards) {
+    if (hazard.kind === 'solar_brazier') {
+      hazard.cooldown = 0;
+      hazard.pulseTimer = 0.65;
+    }
+  }
+
+  triggerScreenShake(state, 'brazier_detonated', 0, events, 13.0);
+  pushCombatLog(
+    state,
+    'total_eclipse',
+    'Total Eclipse Unleashed!',
+    'Visibility Narrowed · Ignite Solar Brazier to Weaken Boss!'
+  );
+
+  if (events) {
+    events.totalEclipseTriggered = true;
+    if (targetBoss) {
+      events.particlesToSpawn.push({
+        x: targetBoss.x,
+        y: targetBoss.y,
+        color: '#c084fc',
+        count: 26,
+        speed: 260,
+        size: 5,
+      });
+    }
+  }
+
+  return true;
+}
+
+export function triggerBossVulnerabilityWindow(
+  state: ArenaWorldState,
+  brazier?: ArenaHazard,
+  events?: SimulationEvents,
+  duration = 7.0
+): boolean {
+  if (!state.totalEclipseActive) return false;
+
+  state.bossVulnerabilityTimer = Math.max(state.bossVulnerabilityTimer, duration);
+  state.bossVulnerabilityMaxTimer = Math.max(state.bossVulnerabilityMaxTimer, duration);
+
+  const flareOriginX = brazier ? brazier.x : state.player.x;
+  const flareOriginY = brazier ? brazier.y : state.player.y;
+  const purifyDmg = Math.round((45 + state.stageLevel * 8) * state.player.damageMultiplier);
+
+  for (const enemy of state.enemies) {
+    if (enemy.aiState === 'ko' || enemy.hp <= 0) continue;
+    if (isBossOrEclipseCandidate(state, enemy) || state.gameMode === 'boss_rush') {
+      applyEnemyDebuff(enemy, 'sundered', duration, events);
+      applyEnemyDebuff(enemy, 'burned', 5.0, events, undefined, 2);
+      enemy.hp = Math.max(1, enemy.hp - purifyDmg);
+      enemy.hitFlashTimer = 0.14;
+      enemy.scaleX = 1.32;
+      enemy.scaleY = 0.7;
+
+      // Interrupt any active boss windup telegraph and stagger into recovery
+      if (enemy.aiState === 'windup' || enemy.aiState === 'active') {
+        enemy.aiState = 'recovery';
+        enemy.stateTimer = 0;
+        enemy.stateDuration = 0.95;
+        if (enemy.hasAttackToken) {
+          enemy.hasAttackToken = false;
+          state.activeAttackTokens = Math.max(0, state.activeAttackTokens - 1);
+        }
+      }
+
+      state.lightningArcs.push({
+        x1: flareOriginX,
+        y1: flareOriginY,
+        x2: enemy.x,
+        y2: enemy.y,
+        life: 0,
+        maxLife: 0.42,
+        color: '#fde047',
+      });
+    }
+  }
+
+  pushCombatLog(
+    state,
+    'eclipse_vulnerability',
+    'Boss Vulnerability Window!',
+    `Solar Brazier Ignited · Boss Defense Broken (+50% DMG · ${duration.toFixed(0)}s)`
+  );
+
+  if (events) {
+    events.bossVulnerabilityTriggered = true;
+    events.particlesToSpawn.push({
+      x: flareOriginX,
+      y: flareOriginY,
+      color: '#fde047',
+      count: 24,
+      speed: 280,
+      size: 5,
+    });
+  }
+
+  return true;
+}
+
+export function getEclipseLightSources(state: ArenaWorldState): EclipseLightSource[] {
+  const sources: EclipseLightSource[] = [];
+  const p = state.player;
+  const playerRadius = state.novaPulseTimer > 0 ? 225 : state.bossVulnerabilityTimer > 0 ? 185 : 148;
+  sources.push({
+    x: p.x,
+    y: p.y,
+    radius: playerRadius,
+    kind: 'player',
+    intensity: 1.0,
+  });
+
+  for (const hazard of state.hazards) {
+    if (hazard.kind !== 'solar_brazier') continue;
+    const isRecentlyIgnited = hazard.cooldown > 0 || hazard.pulseTimer > 0;
+    sources.push({
+      x: hazard.x,
+      y: hazard.y,
+      radius: isRecentlyIgnited ? 265 : 175,
+      kind: isRecentlyIgnited ? 'brazier_ignited' : 'brazier_lit',
+      intensity: isRecentlyIgnited ? 1.0 : 0.88,
+    });
+  }
+
+  return sources;
 }
 
 export function pushCombatLog(
@@ -3692,6 +3920,11 @@ export function detonateSolarBrazier(
       Math.hypot(proj.x - brazier.x, proj.y - brazier.y) > brazier.blastRadius
   );
 
+  // If Total Eclipse is active in a Boss / Boss Rush chamber, igniting a Solar Brazier shatters the Boss's Umbral Ward!
+  if (state.totalEclipseActive) {
+    triggerBossVulnerabilityWindow(state, brazier, targetEvents, 7.0);
+  }
+
   return enemiesHit;
 }
 
@@ -3720,6 +3953,10 @@ export function transitionToRoom(
   state.lightningArcs = [];
   state.vortexVisuals = [];
   state.reactionVisuals = [];
+  state.totalEclipseActive = false;
+  state.eclipseTransitionProgress = 0;
+  state.eclipseBannerTimer = 0;
+  state.bossVulnerabilityTimer = 0;
   state.activeAttackTokens = 0;
   const roomProfile = getStageDifficultyProfile(
     state.stageLevel,
@@ -3816,19 +4053,27 @@ export function grantPlayerXp(
 ): boolean {
   if (amount <= 0 || state.player.hp <= 0) return false;
   const p = state.player;
+  if (p.level >= MAX_PLAYER_LEVEL) {
+    p.xp = Math.min(p.xpToNextLevel, p.xp + amount);
+    return false;
+  }
   p.xp += amount;
   let leveledUp = false;
 
-  while (p.xp >= p.xpToNextLevel) {
+  while (p.xp >= p.xpToNextLevel && p.level < MAX_PLAYER_LEVEL) {
     p.xp -= p.xpToNextLevel;
     p.level += 1;
     p.xpToNextLevel = calculateXpForLevel(p.level);
-    p.hp = Math.min(p.maxHp, p.hp + 12);
+    p.hp = Math.min(p.maxHp, p.hp + 15);
     p.ghostHp = Math.max(p.ghostHp, p.hp);
-    p.essence = Math.min(p.maxEssence, p.essence + 20);
+    p.essence = Math.min(p.maxEssence, p.essence + 25);
     state.pendingLevelUps += 1;
     state.levelUpBannerTimer = 2.0;
     leveledUp = true;
+  }
+
+  if (p.level >= MAX_PLAYER_LEVEL) {
+    p.xp = Math.min(p.xp, p.xpToNextLevel);
   }
 
   if (leveledUp) {
@@ -3839,6 +4084,8 @@ export function grantPlayerXp(
         state.skillChoices = choices;
         state.pendingLevelUps -= 1;
       } else {
+        // When all skill ranks are maxed on the road to Level 30, grant Ascension stat empowerment
+        p.damageMultiplier = Number((p.damageMultiplier + 0.06 * state.pendingLevelUps).toFixed(2));
         state.pendingLevelUps = 0;
       }
     }
@@ -4087,6 +4334,12 @@ export function stepArenaWorld(
   state.novaPulseTimer = Math.max(0, state.novaPulseTimer - dt);
   state.roomTransitionCooldown = Math.max(0, state.roomTransitionCooldown - dt);
   state.enemyFreezeTimer = Math.max(0, state.enemyFreezeTimer - dt);
+  state.eclipseBannerTimer = Math.max(0, state.eclipseBannerTimer - dt);
+  if (state.totalEclipseActive) {
+    state.eclipseTransitionProgress = Math.min(1, state.eclipseTransitionProgress + dt * 2.5);
+  } else {
+    state.eclipseTransitionProgress = Math.max(0, state.eclipseTransitionProgress - dt * 2.5);
+  }
   tickCombatLog(state, dt);
 
   for (let i = state.lightningArcs.length - 1; i >= 0; i--) {
@@ -4168,6 +4421,9 @@ export function stepArenaWorld(
 
   const simDt = dt;
   state.elapsedSeconds += simDt;
+  if (state.bossVulnerabilityTimer > 0) {
+    state.bossVulnerabilityTimer = Math.max(0, state.bossVulnerabilityTimer - simDt);
+  }
 
   // =========================================================================
   // ELEMENTAL DEBUFF UPDATE (PLAYER BURNED & SLOWED)
@@ -5059,6 +5315,14 @@ export function stepArenaWorld(
       continue;
     }
 
+    if (
+      isBossOrEclipseCandidate(state, enemy) &&
+      enemy.hp <= enemy.maxHp * 0.5 &&
+      (enemy.phase === 1 || !state.totalEclipseActive)
+    ) {
+      triggerTotalEclipseEvent(state, enemy, events);
+    }
+
     const indivSlowMult =
       enemy.slowTimer > 0 ? ELEMENTAL_DEBUFF_CATALOG.slowed.enemySpeedMultiplier : 1.0;
     const enemySpeedMult = globalFreezeMult * indivSlowMult;
@@ -5348,10 +5612,8 @@ export function stepArenaWorld(
         enemy.walkDistance += enemy.speed * enemyDt;
         enemy.stateTimer += enemyDt;
 
-        if (enemy.hp <= enemy.maxHp * 0.5 && enemy.phase === 1) {
-          enemy.phase = 2;
-          state.hitstopTimer = Math.max(state.hitstopTimer, 0.07);
-          state.cameraTrauma = Math.min(1, state.cameraTrauma + 0.5);
+        if (enemy.hp <= enemy.maxHp * 0.5 && (enemy.phase === 1 || !state.totalEclipseActive)) {
+          triggerTotalEclipseEvent(state, enemy, events);
         }
 
         const cooldown = (enemy.phase === 2 ? 1.15 : 1.6) * cdMult;
@@ -6033,6 +6295,8 @@ export function stepArenaWorld(
     state.outcome === 'none'
   ) {
     currentRoom.cleared = true;
+    state.totalEclipseActive = false;
+    state.bossVulnerabilityTimer = 0;
     events.waveCleared = true;
     if (state.gameMode === 'boss_rush') {
       state.bossRushWavesCleared += 1;
@@ -6081,10 +6345,24 @@ export function damageEnemy(
 
   const sunderMult =
     enemy.sunderTimer > 0.04 ? (ELEMENTAL_DEBUFF_CATALOG.sundered.damageTakenMultiplier ?? 1.35) : 1.0;
-  const sunderedDamage = Math.round(damage * sunderMult);
+  const eclipseMult =
+    state.totalEclipseActive && isBossOrEclipseCandidate(state, enemy)
+      ? state.bossVulnerabilityTimer > 0
+        ? 1.5
+        : 0.75
+      : 1.0;
+  const sunderedDamage = Math.round(damage * sunderMult * eclipseMult);
   const appliedDamage = isCritical ? Math.round(sunderedDamage * 1.5) : sunderedDamage;
 
   enemy.hp = Math.max(0, enemy.hp - appliedDamage);
+  if (
+    enemy.hp > 0 &&
+    enemy.hp <= enemy.maxHp * 0.5 &&
+    isBossOrEclipseCandidate(state, enemy) &&
+    (enemy.phase === 1 || !state.totalEclipseActive)
+  ) {
+    triggerTotalEclipseEvent(state, enemy, events);
+  }
   enemy.hitFlashTimer = isCritical ? 0.095 : 0.06;
   enemy.vx += Math.cos(knockbackAngle) * (isCritical ? knockbackForce * 1.25 : knockbackForce);
   enemy.vy += Math.sin(knockbackAngle) * (isCritical ? knockbackForce * 1.25 : knockbackForce);
@@ -6183,6 +6461,13 @@ export function damageEnemy(
     if (enemy.hasAttackToken) {
       enemy.hasAttackToken = false;
       state.activeAttackTokens = Math.max(0, state.activeAttackTokens - 1);
+    }
+    if (
+      state.totalEclipseActive &&
+      !state.enemies.some((e) => e.aiState !== 'ko' && isBossOrEclipseCandidate(state, e))
+    ) {
+      state.totalEclipseActive = false;
+      state.bossVulnerabilityTimer = 0;
     }
     state.enemiesDefeated += 1;
     state.defeatedByArchetype[enemy.archetype] =
