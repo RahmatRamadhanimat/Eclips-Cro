@@ -5,6 +5,8 @@ import {
   ARENA_WIDTH,
   DoorDirection,
   DungeonRoom,
+  ENEMY_ARCHETYPE_CATALOG,
+  EnemyArchetype,
   FrameInput,
   GamePhase,
   getDoorWorldPosition,
@@ -19,6 +21,15 @@ import {
   WeaponStanceId,
 } from '../game/rules';
 import { soundEngine } from '../game/audio';
+
+export interface HoveredArenaEnemyHud {
+  id: number;
+  archetype: EnemyArchetype;
+  hp: number;
+  maxHp: number;
+  x: number;
+  y: number;
+}
 
 export interface HudDiscreteState {
   stageLevel: number;
@@ -44,6 +55,9 @@ export interface HudDiscreteState {
   skills: Array<{ id: SkillId; rank: number }>;
   skillChoices: SkillChoiceOption[];
   relicChoices: RelicOption[];
+  defeatedByArchetype: Partial<Record<EnemyArchetype, number>>;
+  activeRoomArchetypes: EnemyArchetype[];
+  hoveredArenaEnemy: HoveredArenaEnemyHud | null;
 }
 
 interface ArenaCanvasProps {
@@ -330,7 +344,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleWindowBlur);
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    canvas.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('contextmenu', handleContextMenu);
@@ -556,7 +570,40 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       const invSig = p.inventory.map((s) => `${s.itemId}:${s.count}`).join(',');
       const roomsSig = world.rooms.map((r) => `${r.id}:${r.cleared ? 1 : 0}:${r.visited ? 1 : 0}`).join(',');
 
-      const hudHash = `${world.stageLevel}|${Math.round(p.hp)}|${p.maxHp}|${quantizedEssence}|${p.maxEssence}|${p.level}|${Math.round(p.xp)}|${p.xpToNextLevel}|${p.coins}|${invSig}|${world.currentRoomIndex}|${roomsSig}|${world.wave}|${Math.round(world.score)}|${Math.round(world.bestScore)}|${world.comboCount}|${p.stance}|${bossHpPct}|${skillsSig}|${world.skillChoices.length}|${world.relicChoices.length}`;
+      // Detect hovered arena enemy when paused for Bestiary live arena inspection
+      let hoveredArenaEnemy: HoveredArenaEnemyHud | null = null;
+      if (world.phase === 'paused') {
+        const hoverWorld = screenToWorld(pointerClientX, pointerClientY);
+        let bestDist = Infinity;
+        for (const e of world.enemies) {
+          if (e.aiState === 'ko') continue;
+          const d = Math.hypot(e.x - hoverWorld.x, e.y - hoverWorld.y);
+          if (d <= e.radius + 22 && d < bestDist) {
+            bestDist = d;
+            hoveredArenaEnemy = {
+              id: e.id,
+              archetype: e.archetype,
+              hp: Math.max(0, Math.round(e.hp)),
+              maxHp: Math.round(e.maxHp),
+              x: Math.round(e.x),
+              y: Math.round(e.y),
+            };
+          }
+        }
+      }
+
+      const activeRoomArchetypes = Array.from(
+        new Set(world.enemies.filter((e) => e.aiState !== 'ko').map((e) => e.archetype))
+      );
+      const defeatedSig = Object.entries(world.defeatedByArchetype)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(',');
+      const activeArchSig = activeRoomArchetypes.join(',');
+      const hoverSig = hoveredArenaEnemy
+        ? `${hoveredArenaEnemy.id}:${hoveredArenaEnemy.archetype}:${hoveredArenaEnemy.hp}`
+        : 'none';
+
+      const hudHash = `${world.stageLevel}|${Math.round(p.hp)}|${p.maxHp}|${quantizedEssence}|${p.maxEssence}|${p.level}|${Math.round(p.xp)}|${p.xpToNextLevel}|${p.coins}|${invSig}|${world.currentRoomIndex}|${roomsSig}|${world.wave}|${Math.round(world.score)}|${Math.round(world.bestScore)}|${world.comboCount}|${p.stance}|${bossHpPct}|${skillsSig}|${world.skillChoices.length}|${world.relicChoices.length}|${defeatedSig}|${activeArchSig}|${hoverSig}`;
       if (hudHash !== lastHudHash) {
         lastHudHash = hudHash;
         callbacksRef.current.onSyncHud({
@@ -583,6 +630,9 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           skills: learnedSkills,
           skillChoices: world.skillChoices,
           relicChoices: world.relicChoices,
+          defeatedByArchetype: { ...world.defeatedByArchetype },
+          activeRoomArchetypes,
+          hoveredArenaEnemy,
         });
       }
 
@@ -621,6 +671,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       drawPickups(ctx, world, now / 1000);
       drawEnemyTelegraphs(ctx, world);
       drawEnemies(ctx, world, now / 1000);
+      drawPausedBestiaryReticles(ctx, world, hoveredArenaEnemy, now / 1000);
       drawPlayerAndAttack(ctx, world);
       drawLightningArcs(ctx, world);
       drawProjectiles(ctx, world);
@@ -642,7 +693,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleWindowBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      canvas.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mouseup', handleMouseUp);
       canvas.removeEventListener('contextmenu', handleContextMenu);
@@ -1415,6 +1466,53 @@ function drawParticles(ctx: CanvasRenderingContext2D, pool: PooledParticle[]): v
     ctx.fillRect(pt.x - pt.size * 0.5, pt.y - pt.size * 0.5, pt.size, pt.size);
   }
   ctx.globalAlpha = 1;
+}
+
+function drawPausedBestiaryReticles(
+  ctx: CanvasRenderingContext2D,
+  world: ArenaWorldState,
+  hoveredEnemy: HoveredArenaEnemyHud | null,
+  timeSec: number
+): void {
+  if (world.phase !== 'paused') return;
+
+  for (const e of world.enemies) {
+    if (e.aiState === 'ko') continue;
+    const isHovered = hoveredEnemy?.id === e.id;
+    const meta = ENEMY_ARCHETYPE_CATALOG[e.archetype];
+    ctx.save();
+    ctx.translate(e.x, e.y);
+
+    // Subtle scan ring on all alive monsters while paused; bright animated reticle on hovered monster
+    const ringRadius = e.radius + (isHovered ? 12 + Math.sin(timeSec * 6) * 2 : 7);
+    ctx.strokeStyle = isHovered ? '#fde047' : 'rgba(245, 158, 11, 0.35)';
+    ctx.lineWidth = isHovered ? 2.5 : 1.25;
+    ctx.setLineDash(isHovered ? [6, 4] : [3, 5]);
+    ctx.beginPath();
+    ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (isHovered) {
+      const label = `${meta.name.toUpperCase()} · ${Math.max(0, Math.round(e.hp))}/${Math.round(e.maxHp)} HP`;
+      ctx.font = '700 11px JetBrains Mono, monospace';
+      const textW = ctx.measureText(label).width;
+      const boxW = textW + 16;
+      const boxH = 22;
+      const boxY = -e.radius - 36;
+      ctx.fillStyle = 'rgba(13, 11, 20, 0.94)';
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.5;
+      ctx.fillRect(-boxW * 0.5, boxY, boxW, boxH);
+      ctx.strokeRect(-boxW * 0.5, boxY, boxW, boxH);
+
+      ctx.fillStyle = '#fde047';
+      ctx.textAlign = 'center';
+      ctx.fillText(label, 0, boxY + 15);
+    }
+
+    ctx.restore();
+  }
 }
 
 function drawWaveBanner(ctx: CanvasRenderingContext2D, world: ArenaWorldState): void {

@@ -305,9 +305,33 @@ export interface EnemyArchetypeMetadata {
   name: string;
   minStage: number;
   role: 'skirmisher' | 'assassin' | 'artillery' | 'controller' | 'juggernaut' | 'summoner' | 'elite' | 'boss';
+  accentColor: string;
+  baseHp: number;
+  baseDamage: number;
+  baseSpeed: number;
+  xpReward: number;
+  coinReward: number;
+  weaknessStance: WeaponStanceId;
+  weaknessSummary: string;
+  counterTip: string;
   movementPattern: string;
   attackPattern: string;
 }
+
+export const ENEMY_ARCHETYPE_KEYS: EnemyArchetype[] = [
+  'stalker',
+  'wraith',
+  'arcanist',
+  'frost_revenant',
+  'pyromancer',
+  'sentinel',
+  'juggernaut',
+  'necro_weaver',
+  'void_singularity',
+  'solar_zealot',
+  'eclipse_inquisitor',
+  'archon',
+];
 
 export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetadata> = {
   stalker: {
@@ -315,6 +339,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Void Stalker',
     minStage: 1,
     role: 'skirmisher',
+    accentColor: '#f43f5e',
+    baseHp: 50,
+    baseDamage: 11,
+    baseSpeed: 146,
+    xpReward: 34,
+    coinReward: 7,
+    weaknessStance: 'dawnblade',
+    weaknessSummary: 'Weak to [1] Dawnblade (+20% DMG) · Rapid sweeps interrupt its flank approach.',
+    counterTip: 'Step perpendicular to its crimson telegraph line during the 0.36s windup.',
     movementPattern: 'Curved flank pursuit',
     attackPattern: 'Short-range crimson lunge',
   },
@@ -323,6 +356,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Blink Wraith',
     minStage: 1,
     role: 'assassin',
+    accentColor: '#2dd4bf',
+    baseHp: 42,
+    baseDamage: 13,
+    baseSpeed: 180,
+    xpReward: 42,
+    coinReward: 7,
+    weaknessStance: 'chrono_scythe',
+    weaknessSummary: 'Weak to [3] Chrono Scythe (+20% DMG) · Wide 240° reap catches its sinusoidal weave.',
+    counterTip: 'Save Dash [Space] for its high-velocity teal blink-lunge and punish its recovery.',
     movementPattern: 'Diagonal sinusoidal weave',
     attackPattern: 'High-velocity phantom blink-slash',
   },
@@ -331,6 +373,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Rift Arcanist',
     minStage: 1,
     role: 'artillery',
+    accentColor: '#a855f7',
+    baseHp: 46,
+    baseDamage: 14,
+    baseSpeed: 114,
+    xpReward: 45,
+    coinReward: 10,
+    weaknessStance: 'astral_bow',
+    weaknessSummary: 'Weak to [2] Astral Bow (+20% DMG) · Piercing volleys out-range its kiting retreat.',
+    counterTip: 'Use stone pillars to block its rift orbs or close distance with Dash.',
     movementPattern: 'Standoff kiting & lateral strafe',
     attackPattern: 'Stage-scaled rift orb volley',
   },
@@ -339,6 +390,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Frost Revenant',
     minStage: 2,
     role: 'controller',
+    accentColor: '#67e8f9',
+    baseHp: 54,
+    baseDamage: 15,
+    baseSpeed: 128,
+    xpReward: 52,
+    coinReward: 10,
+    weaknessStance: 'dawnblade',
+    weaknessSummary: 'Weak to [1] Dawnblade (+20% DMG) · Aggressive melee pressure breaks its figure-8 orbit.',
+    counterTip: 'Avoid the fast center cryo-lance and slip between the outer crescent shards.',
     movementPattern: 'Figure-eight glacial glide',
     attackPattern: 'Piercing cryo-lance + crescent ice fan',
   },
@@ -347,6 +407,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Cinder Pyromancer',
     minStage: 2,
     role: 'artillery',
+    accentColor: '#fb923c',
+    baseHp: 58,
+    baseDamage: 16,
+    baseSpeed: 106,
+    xpReward: 55,
+    coinReward: 10,
+    weaknessStance: 'astral_bow',
+    weaknessSummary: 'Weak to [2] Astral Bow (+20% DMG) · Snipe from afar before its magma fan spreads.',
+    counterTip: 'Trigger Solar Nova [E] to vaporize incoming magma fireballs in mid-air.',
     movementPattern: 'Mid-range thermal orbit',
     attackPattern: 'Spreading magma mortar fan',
   },
@@ -355,6 +424,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Solaris Sentinel',
     minStage: 3,
     role: 'controller',
+    accentColor: '#38bdf8',
+    baseHp: 98,
+    baseDamage: 18,
+    baseSpeed: 80,
+    xpReward: 70,
+    coinReward: 16,
+    weaknessStance: 'chrono_scythe',
+    weaknessSummary: 'Weak to [3] Chrono Scythe (+20% DMG) · Heavy armor cleaves stagger its construct core.',
+    counterTip: 'Stand at a 45° diagonal angle relative to its cross-laser telegraph rays.',
     movementPattern: 'Relentless armored advance',
     attackPattern: 'Rotating 4-way / 8-way cardinal laser pulse',
   },
@@ -363,6 +441,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Obsidian Juggernaut',
     minStage: 3,
     role: 'juggernaut',
+    accentColor: '#f59e0b',
+    baseHp: 115,
+    baseDamage: 20,
+    baseSpeed: 88,
+    xpReward: 75,
+    coinReward: 16,
+    weaknessStance: 'chrono_scythe',
+    weaknessSummary: 'Weak to [3] Chrono Scythe (+20% DMG) · High knockback halts its unstoppable march.',
+    counterTip: 'Bait its golden bull-charge rectangle into a pillar and strike during its 0.65s recovery.',
     movementPattern: 'Heavy unstoppable march',
     attackPattern: 'Long-distance bull charge + shockwave',
   },
@@ -371,6 +458,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Necro Weaver',
     minStage: 4,
     role: 'summoner',
+    accentColor: '#34d399',
+    baseHp: 72,
+    baseDamage: 15,
+    baseSpeed: 98,
+    xpReward: 64,
+    coinReward: 13,
+    weaknessStance: 'astral_bow',
+    weaknessSummary: 'Weak to [2] Astral Bow (+20% DMG) · Piercing arrows hit both summoned minions and the summoner.',
+    counterTip: 'Eliminate the Necro Weaver early before it summons additional Stalkers and Wraiths.',
     movementPattern: 'Wide ritual circle orbit',
     attackPattern: 'Tri-bolt curse fan + shadow minion summon',
   },
@@ -379,6 +475,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Void Singularity',
     minStage: 4,
     role: 'controller',
+    accentColor: '#c084fc',
+    baseHp: 78,
+    baseDamage: 17,
+    baseSpeed: 92,
+    xpReward: 68,
+    coinReward: 13,
+    weaknessStance: 'astral_bow',
+    weaknessSummary: 'Weak to [2] Astral Bow (+20% DMG) · Long-range volleys stay safely outside its gravity well.',
+    counterTip: 'Dash [Space] cancels its gravitational pull during windup before the spiral orb burst.',
     movementPattern: 'Harmonic anchor drift + gravity well',
     attackPattern: 'Gravitational pull windup + spiral orb burst',
   },
@@ -387,6 +492,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Solar Zealot',
     minStage: 5,
     role: 'assassin',
+    accentColor: '#facc15',
+    baseHp: 68,
+    baseDamage: 17,
+    baseSpeed: 168,
+    xpReward: 66,
+    coinReward: 13,
+    weaknessStance: 'dawnblade',
+    weaknessSummary: 'Weak to [1] Dawnblade (+20% DMG) · Fast strikes duel its frenzied zig-zag rush.',
+    counterTip: 'Watch out for the 2 lateral solar chakrams thrown sideways when it dashes.',
     movementPattern: 'Frenzied zig-zag rush (enrages below 60% HP)',
     attackPattern: 'Cleaving dash + twin lateral solar chakrams',
   },
@@ -395,6 +509,15 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Eclipse Inquisitor',
     minStage: 6,
     role: 'elite',
+    accentColor: '#e879f9',
+    baseHp: 135,
+    baseDamage: 21,
+    baseSpeed: 122,
+    xpReward: 92,
+    coinReward: 22,
+    weaknessStance: 'chrono_scythe',
+    weaknessSummary: 'Weak to [3] Chrono Scythe (+20% DMG) · Crushes its templar ward after a shadow-step.',
+    counterTip: 'After it shadow-steps, dodge the aimed golden spear trio before weaving through the 8-way star.',
     movementPattern: 'Tactical shadow-step teleportation',
     attackPattern: '8-way judgment star + aimed triple lance burst',
   },
@@ -403,10 +526,40 @@ export const ENEMY_ARCHETYPE_CATALOG: Record<EnemyArchetype, EnemyArchetypeMetad
     name: 'Archon of the Corona',
     minStage: 1,
     role: 'boss',
+    accentColor: '#fb7185',
+    baseHp: 400,
+    baseDamage: 22,
+    baseSpeed: 104,
+    xpReward: 260,
+    coinReward: 45,
+    weaknessStance: 'dawnblade',
+    weaknessSummary: 'Weak to [1] Dawnblade (+20% DMG) · Rapid melee hits generate Essence for frequent Solar Novas.',
+    counterTip: 'Move out of the 92px crimson annihilation circle and use Solar Nova [E] to clear its radial orb ring.',
     movementPattern: 'Sanctum center orbital command',
     attackPattern: 'Multi-phase radial corona barrage + targeted annihilation blast',
   },
 };
+
+export interface BestiaryEntryView {
+  id: EnemyArchetype;
+  name: string;
+  role: EnemyArchetypeMetadata['role'];
+  minStage: number;
+  accentColor: string;
+  unlocked: boolean;
+  defeatedCount: number;
+  scaledHp: number;
+  scaledDamage: number;
+  scaledSpeed: number;
+  xpReward: number;
+  coinReward: number;
+  weaknessStance: WeaponStanceId;
+  weaknessStanceName: string;
+  weaknessSummary: string;
+  counterTip: string;
+  movementPattern: string;
+  attackPattern: string;
+}
 
 export interface EnemyEntity {
   id: number;
@@ -627,6 +780,7 @@ export interface ArenaWorldState {
   comboTimer: number;
   elapsedSeconds: number;
   enemiesDefeated: number;
+  defeatedByArchetype: Partial<Record<EnemyArchetype, number>>;
   damageTaken: number;
   hitstopTimer: number;
   cameraTrauma: number;
@@ -852,6 +1006,38 @@ export function getStageDifficultyProfile(
     maxConcurrentAttackers,
     enemyCount,
     unlockedArchetypes,
+  };
+}
+
+export function getBestiaryEntry(
+  archetype: EnemyArchetype,
+  stageLevel = 1,
+  roomIdx = 0,
+  totalRooms = 4,
+  defeatedCount = 0
+): BestiaryEntryView {
+  const meta = ENEMY_ARCHETYPE_CATALOG[archetype];
+  const profile = getStageDifficultyProfile(stageLevel, roomIdx, totalRooms);
+  const stanceSpec = WEAPON_STANCES[meta.weaknessStance];
+  return {
+    id: meta.id,
+    name: meta.name,
+    role: meta.role,
+    minStage: meta.minStage,
+    accentColor: meta.accentColor,
+    unlocked: defeatedCount > 0,
+    defeatedCount,
+    scaledHp: Math.round(meta.baseHp * profile.hpMultiplier),
+    scaledDamage: Math.round(meta.baseDamage * profile.damageMultiplier),
+    scaledSpeed: Math.round(meta.baseSpeed * profile.speedMultiplier),
+    xpReward: meta.xpReward,
+    coinReward: meta.coinReward,
+    weaknessStance: meta.weaknessStance,
+    weaknessStanceName: `[${stanceSpec.keyBinding}] ${stanceSpec.name}`,
+    weaknessSummary: meta.weaknessSummary,
+    counterTip: meta.counterTip,
+    movementPattern: meta.movementPattern,
+    attackPattern: meta.attackPattern,
   };
 }
 
@@ -1332,6 +1518,7 @@ export function createInitialWorldState(
     comboTimer: 0,
     elapsedSeconds: 0,
     enemiesDefeated: 0,
+    defeatedByArchetype: {},
     damageTaken: 0,
     hitstopTimer: 0,
     cameraTrauma: 0,
@@ -2176,8 +2363,10 @@ export function stepArenaWorld(
             const diff = Math.abs(normalizeAngleDiff(angleToEnemy, p.attackAngle));
             if (diff <= stanceSpec.arcRadians * 0.5 || dist < p.radius + enemy.radius + 10) {
               p.attackHitIds.push(enemy.id);
+              const weaknessMult =
+                ENEMY_ARCHETYPE_CATALOG[enemy.archetype]?.weaknessStance === p.stance ? 1.2 : 1.0;
               const dmg = Math.round(
-                (stanceSpec.damage + echoRank * 10) * p.damageMultiplier
+                (stanceSpec.damage + echoRank * 10) * p.damageMultiplier * weaknessMult
               );
               if (p.stance === 'dawnblade') {
                 p.essence = Math.min(p.maxEssence, p.essence + 8);
@@ -3007,7 +3196,18 @@ export function stepArenaWorld(
           proj.hitEnemyIds.push(enemy.id);
           proj.pierceLeft--;
           const hitAng = Math.atan2(proj.vy, proj.vx);
-          damageEnemy(state, enemy, proj.damage, hitAng, 130, 0.025, events, true);
+          const bowWeaknessMult =
+            ENEMY_ARCHETYPE_CATALOG[enemy.archetype]?.weaknessStance === 'astral_bow' ? 1.2 : 1.0;
+          damageEnemy(
+            state,
+            enemy,
+            Math.round(proj.damage * bowWeaknessMult),
+            hitAng,
+            130,
+            0.025,
+            events,
+            true
+          );
           if (proj.pierceLeft <= 0) {
             state.projectiles.splice(i, 1);
             break;
@@ -3207,6 +3407,8 @@ function damageEnemy(
       state.activeAttackTokens = Math.max(0, state.activeAttackTokens - 1);
     }
     state.enemiesDefeated += 1;
+    state.defeatedByArchetype[enemy.archetype] =
+      (state.defeatedByArchetype[enemy.archetype] ?? 0) + 1;
     const comboMult = 1 + Math.min(2.0, state.comboCount * 0.1);
     state.score += Math.round(enemy.scoreValue * comboMult);
     state.bestScore = Math.max(state.bestScore, state.score);

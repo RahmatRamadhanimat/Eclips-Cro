@@ -9,8 +9,10 @@ import {
   createEnemy,
   createInitialWorldState,
   ENEMY_ARCHETYPE_CATALOG,
+  ENEMY_ARCHETYPE_KEYS,
   FrameInput,
   generateDungeonMap,
+  getBestiaryEntry,
   getHealthPipStates,
   getStageDifficultyProfile,
   grantPlayerXp,
@@ -270,3 +272,69 @@ test('reachable defeat transitions to gameover and freezes run snapshot after de
   assert.equal(world.snapshot?.bestScore, 840);
   assert.equal(world.snapshot?.stageLevel, 2);
 });
+
+test('bestiary entries compute stage-scaled stats, track defeated archetypes, and apply +20% weakness stance bonus damage', () => {
+  // Verify all 12 archetypes produce valid Bestiary entries and scale up with stage level
+  for (const arch of ENEMY_ARCHETYPE_KEYS) {
+    const entryStage1 = getBestiaryEntry(arch, 1, 0, 4, 0);
+    const entryStage6 = getBestiaryEntry(arch, 6, 3, 7, 2);
+    assert.equal(entryStage1.unlocked, false);
+    assert.equal(entryStage6.unlocked, true);
+    assert.equal(entryStage6.defeatedCount, 2);
+    assert.equal(entryStage6.scaledHp > entryStage1.scaledHp, true);
+    assert.equal(entryStage6.scaledDamage > entryStage1.scaledDamage, true);
+    assert.equal(entryStage6.weaknessSummary.includes('+20% DMG'), true);
+    assert.equal(entryStage6.counterTip.length > 10, true);
+    assert.equal(entryStage6.attackPattern.length > 5, true);
+  }
+
+  // Verify striking an enemy with its weaknessStance deals +20% bonus damage and records defeatedByArchetype on kill
+  const world = createInitialWorldState('playing', 0, 1);
+  const stalkerMeta = ENEMY_ARCHETYPE_CATALOG.stalker;
+  assert.equal(stalkerMeta.weaknessStance, 'dawnblade');
+
+  const targetWeak = createEnemy(701, 'stalker', world.player.x + 48, world.player.y, 1, 0, 4);
+  targetWeak.hp = 200;
+  targetWeak.maxHp = 200;
+  world.enemies = [targetWeak];
+  world.player.stance = 'dawnblade'; // Weakness stance for stalker (base damage 28 -> * 1.2 = 34)
+
+  stepArenaWorld(
+    world,
+    emptyInput({
+      aimWorldX: targetWeak.x,
+      aimWorldY: targetWeak.y,
+      attackJustPressed: true,
+      attackHeld: true,
+    }),
+    0.02
+  );
+  for (let i = 0; i < 6; i++) {
+    stepArenaWorld(world, emptyInput({ aimWorldX: targetWeak.x, aimWorldY: targetWeak.y }), 0.02);
+  }
+
+  const damageDealt = 200 - targetWeak.hp;
+  assert.equal(damageDealt, Math.round(28 * 1.2), 'Weakness stance should deal +20% bonus damage');
+
+  // Now reduce HP and finish off the stalker to verify defeatedByArchetype increments
+  targetWeak.hp = 10;
+  world.player.attackPhase = 'idle';
+  world.player.attackTimer = 0;
+  stepArenaWorld(
+    world,
+    emptyInput({
+      aimWorldX: targetWeak.x,
+      aimWorldY: targetWeak.y,
+      attackJustPressed: true,
+      attackHeld: true,
+    }),
+    0.02
+  );
+  for (let i = 0; i < 6; i++) {
+    stepArenaWorld(world, emptyInput({ aimWorldX: targetWeak.x, aimWorldY: targetWeak.y }), 0.02);
+  }
+
+  assert.equal(targetWeak.aiState, 'ko');
+  assert.equal(world.defeatedByArchetype.stalker, 1);
+});
+

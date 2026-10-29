@@ -10,7 +10,11 @@ import {
   buyMerchantItem,
   createInitialWorldState,
   DoorDirection,
+  ENEMY_ARCHETYPE_CATALOG,
+  ENEMY_ARCHETYPE_KEYS,
+  EnemyArchetype,
   GamePhase,
+  getBestiaryEntry,
   getHealthPipStates,
   grantPlayerXp,
   MAX_STAGE_LEVEL,
@@ -50,6 +54,42 @@ import {
 const STORAGE_BEST_SCORE_KEY = 'eclipse_chronicle_best_score_v1';
 const STORAGE_UNLOCKED_STAGE_KEY = 'eclipse_chronicle_unlocked_stage_v1';
 const STORAGE_RUNS_PLAYED_KEY = 'eclipse_chronicle_runs_played_v1';
+const STORAGE_BESTIARY_KEY = 'eclipse_chronicle_bestiary_v1';
+
+function loadBestiaryDefeated(): Partial<Record<EnemyArchetype, number>> {
+  try {
+    const out: Partial<Record<EnemyArchetype, number>> = {};
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('unlockall') === '1' || params.get('bestiary') === '1') {
+        for (const arch of ENEMY_ARCHETYPE_KEYS) {
+          out[arch] = 3;
+        }
+      }
+    }
+    const raw = localStorage.getItem(STORAGE_BESTIARY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Record<string, number>;
+      for (const arch of ENEMY_ARCHETYPE_KEYS) {
+        const val = parsed[arch];
+        if (typeof val === 'number' && Number.isFinite(val) && val > 0) {
+          out[arch] = Math.max(out[arch] ?? 0, Math.round(val));
+        }
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveBestiaryDefeated(counts: Partial<Record<EnemyArchetype, number>>): void {
+  try {
+    localStorage.setItem(STORAGE_BESTIARY_KEY, JSON.stringify(counts));
+  } catch {
+    // Ignore storage errors
+  }
+}
 
 function loadBestScore(): number {
   try {
@@ -154,6 +194,11 @@ export default function App() {
   const [runsPlayed, setRunsPlayed] = useState<number>(() => loadRunsPlayed());
   const [currentUser, setCurrentUser] = useState<User | null>(() => auth.currentUser);
   const [authStatusText, setAuthStatusText] = useState<string>('');
+  const [persistedBestiary, setPersistedBestiary] = useState<
+    Partial<Record<EnemyArchetype, number>>
+  >(() => loadBestiaryDefeated());
+  const [hoveredBestiaryArchetype, setHoveredBestiaryArchetype] =
+    useState<EnemyArchetype | null>(null);
 
   const worldRef = useRef(buildInitialWorld(initialPhase, initialBest, initialStage));
   const [phase, setPhase] = useState<GamePhase>(initialPhase);
@@ -164,6 +209,9 @@ export default function App() {
     const learnedSkills = (Object.keys(w.player.skills) as SkillId[])
       .filter((k) => (w.player.skills[k] ?? 0) > 0)
       .map((k) => ({ id: k, rank: w.player.skills[k] ?? 1 }));
+    const activeRoomArchetypes = Array.from(
+      new Set(w.enemies.filter((e) => e.aiState !== 'ko').map((e) => e.archetype))
+    );
     return {
       stageLevel: w.stageLevel,
       hp: Math.round(w.player.hp),
@@ -188,10 +236,34 @@ export default function App() {
       skills: learnedSkills,
       skillChoices: [...w.skillChoices],
       relicChoices: [...w.relicChoices],
+      defeatedByArchetype: { ...w.defeatedByArchetype },
+      activeRoomArchetypes,
+      hoveredArenaEnemy: null,
     };
   }, []);
 
   const [hud, setHud] = useState<HudDiscreteState>(() => buildHudFromWorld(worldRef.current));
+
+  // Persist any newly defeated monster archetypes into localStorage Bestiary archive
+  useEffect(() => {
+    const runEntries = Object.entries(hud.defeatedByArchetype) as Array<[EnemyArchetype, number]>;
+    if (runEntries.length === 0) return;
+    setPersistedBestiary((prev) => {
+      let changed = false;
+      const next: Partial<Record<EnemyArchetype, number>> = { ...prev };
+      for (const [arch, count] of runEntries) {
+        if (count > (next[arch] ?? 0)) {
+          next[arch] = count;
+          changed = true;
+        }
+      }
+      if (changed) {
+        saveBestiaryDefeated(next);
+        return next;
+      }
+      return prev;
+    });
+  }, [hud.defeatedByArchetype]);
 
   // High-frequency bar DOM refs updated by ArenaCanvas without React re-renders
   const hpBarRef = useRef<HTMLDivElement | null>(null);
@@ -1129,83 +1201,335 @@ export default function App() {
       )}
 
       {/* =====================================================================
-          STATE 3: PAUSE MODAL CARD
+          STATE 3: PAUSE MODAL & SANCTUM BESTIARY HOVER CODEX
           ===================================================================== */}
-      {phase === 'paused' && (
-        <section
-          role="dialog"
-          aria-modal="true"
-          aria-label="Game Paused"
-          className="fixed inset-0 z-30 flex items-center justify-center p-6 pointer-events-auto"
-          style={{ backgroundColor: 'rgba(9, 8, 13, 0.82)' }}
-        >
-          <div className="w-full max-w-md bg-[#14111f] border border-[#4c3b63] rounded-md p-6 text-center shadow-[0_16px_48px_rgba(0,0,0,0.95)]">
-            <span className="text-xs font-mono-tabular uppercase tracking-widest text-[#f59e0b]">
-              CHRONICLE SUSPENDED · STAGE {hud.stageLevel}
-            </span>
-            <h2 className="mt-1 text-2xl font-display font-bold text-[#f4efe6]">
-              Sanctuary Paused
-            </h2>
+      {phase === 'paused' && (() => {
+        const mergedCounts: Record<EnemyArchetype, number> = {} as Record<EnemyArchetype, number>;
+        for (const arch of ENEMY_ARCHETYPE_KEYS) {
+          mergedCounts[arch] = Math.max(
+            persistedBestiary[arch] ?? 0,
+            hud.defeatedByArchetype[arch] ?? 0
+          );
+        }
+        const defeatedList = ENEMY_ARCHETYPE_KEYS.filter((arch) => mergedCounts[arch] > 0);
+        const defaultArch: EnemyArchetype =
+          hud.hoveredArenaEnemy?.archetype ??
+          hoveredBestiaryArchetype ??
+          defeatedList[0] ??
+          hud.activeRoomArchetypes[0] ??
+          'stalker';
+        const activeEntry = getBestiaryEntry(
+          defaultArch,
+          hud.stageLevel,
+          hud.currentRoomIndex,
+          hud.rooms.length,
+          mergedCounts[defaultArch] ?? 0
+        );
+        const isLiveArenaHover = hud.hoveredArenaEnemy?.archetype === activeEntry.id;
 
-            <div className="mt-5 grid grid-cols-3 gap-2.5 text-center font-mono-tabular">
-              <div className="bg-[#0d0b14] border border-[#2b2238] rounded p-2.5">
-                <div className="text-[10px] text-[#a39887]">STAGE · ROOM</div>
-                <div className="mt-0.5 text-base font-bold text-[#fde68a]">
-                  S{hud.stageLevel} · R{hud.currentRoomIndex + 1}/{hud.rooms.length}
-                </div>
-              </div>
-              <div className="bg-[#0d0b14] border border-[#2b2238] rounded p-2.5">
-                <div className="text-[10px] text-[#a39887]">COINS · SCORE</div>
-                <div className="mt-0.5 text-base font-bold text-[#f4efe6]">
-                  {hud.coins}c · {hud.score}
-                </div>
-              </div>
-              <div className="bg-[#0d0b14] border border-[#2b2238] rounded p-2.5">
-                <div className="text-[10px] text-[#a39887]">VITALITY</div>
-                <div className="mt-0.5 text-base font-bold text-[#e11d48]">
-                  {hud.hp}/{hud.maxHp}
-                </div>
-              </div>
-            </div>
+        return (
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-label="Game Paused and Bestiary"
+            className="fixed inset-0 z-30 flex items-center justify-center p-4 pointer-events-none"
+            style={{ backgroundColor: 'rgba(9, 8, 13, 0.58)' }}
+          >
+            <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+              {/* Left Column: Sanctuary Pause Summary & Actions */}
+              <div className="lg:col-span-4 bg-[#14111f]/95 border border-[#4c3b63] rounded-md p-5 text-center shadow-[0_16px_48px_rgba(0,0,0,0.95)] flex flex-col justify-between pointer-events-auto">
+                <div>
+                  <span className="text-[11px] font-mono-tabular uppercase tracking-widest text-[#f59e0b]">
+                    CHRONICLE SUSPENDED · STAGE {hud.stageLevel}
+                  </span>
+                  <h2 className="mt-1 text-2xl font-display font-bold text-[#f4efe6]">
+                    Sanctuary Paused
+                  </h2>
+                  <p className="mt-1 text-[11px] text-[#c4b9a5]">
+                    Hover any monster in the arena or badge in the Bestiary to inspect stats &amp; weaknesses.
+                  </p>
 
-            <div className="mt-6 flex flex-col gap-2.5">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.currentTarget.blur();
-                  handleTogglePause();
-                }}
-                className="w-full py-2.5 rounded bg-[#f59e0b] hover:bg-[#fbbf24] text-[#09080d] font-display font-bold text-sm tracking-wider cursor-pointer transition-colors"
+                  <div className="mt-4 grid grid-cols-3 gap-2 text-center font-mono-tabular">
+                    <div className="bg-[#0d0b14] border border-[#2b2238] rounded p-2">
+                      <div className="text-[10px] text-[#a39887]">STAGE · ROOM</div>
+                      <div className="mt-0.5 text-sm font-bold text-[#fde68a]">
+                        S{hud.stageLevel} · R{hud.currentRoomIndex + 1}/{hud.rooms.length}
+                      </div>
+                    </div>
+                    <div className="bg-[#0d0b14] border border-[#2b2238] rounded p-2">
+                      <div className="text-[10px] text-[#a39887]">COINS · SCORE</div>
+                      <div className="mt-0.5 text-sm font-bold text-[#f4efe6]">
+                        {hud.coins}c · {hud.score}
+                      </div>
+                    </div>
+                    <div className="bg-[#0d0b14] border border-[#2b2238] rounded p-2">
+                      <div className="text-[10px] text-[#a39887]">VITALITY</div>
+                      <div className="mt-0.5 text-sm font-bold text-[#e11d48]">
+                        {hud.hp}/{hud.maxHp}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.currentTarget.blur();
+                      handleTogglePause();
+                    }}
+                    className="w-full py-2.5 rounded bg-[#f59e0b] hover:bg-[#fbbf24] text-[#09080d] font-display font-bold text-sm tracking-wider cursor-pointer transition-colors"
+                  >
+                    Resume Game [P]
+                  </button>
+                  {!currentUser && (
+                    <button
+                      type="button"
+                      onClick={handleGoogleLogin}
+                      className="w-full py-2 rounded bg-[#1e1b4b] hover:bg-[#2e296e] text-[#e0f2fe] border border-[#38bdf8] text-xs font-mono-tabular font-bold tracking-wider cursor-pointer transition-colors"
+                    >
+                      Login with Google (Save Cloud Progress)
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleStartOrRestart}
+                    className="w-full py-2 rounded bg-[#1f1a30] hover:bg-[#2b2442] text-[#f4efe6] border border-[#3b2d4a] text-xs font-mono-tabular tracking-wider cursor-pointer transition-colors"
+                  >
+                    Restart Stage {hud.stageLevel}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleReturnToTitle}
+                    className="w-full py-2 rounded bg-[#14111f] hover:bg-[#1f1a30] text-[#c4b9a5] text-xs font-mono-tabular tracking-wider cursor-pointer transition-colors"
+                  >
+                    Return to Stage Select
+                  </button>
+                </div>
+              </div>
+
+              {/* Right Column: Interactive Bestiary Hover Codex */}
+              <div
+                data-testid="pause-bestiary-codex"
+                className="lg:col-span-8 bg-[#14111f]/95 border border-[#f59e0b]/70 rounded-md p-5 shadow-[0_16px_48px_rgba(0,0,0,0.95)] flex flex-col justify-between pointer-events-auto"
               >
-                Resume Game
-              </button>
-              {!currentUser && (
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  className="w-full py-2.5 rounded bg-[#1e1b4b] hover:bg-[#2e296e] text-[#e0f2fe] border border-[#38bdf8] text-xs font-mono-tabular font-bold tracking-wider cursor-pointer transition-colors"
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#2b2238] pb-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-mono-tabular uppercase tracking-widest text-[#fde047]">
+                        SANCTUM BESTIARY CODEX · HOVER INSPECTOR
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-[#1f1930] border border-[#4c3b63] text-[10px] font-mono-tabular text-[#a7f3d0]">
+                        {defeatedList.length}/{ENEMY_ARCHETYPE_KEYS.length} DEFEATED
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-[#c4b9a5]">
+                      Hover a defeated archetype badge below or point directly at any monster in the paused arena.
+                    </p>
+                  </div>
+
+                  {defeatedList.length < ENEMY_ARCHETYPE_KEYS.length && (
+                    <button
+                      type="button"
+                      data-testid="bestiary-unlock-all-btn"
+                      onClick={() => {
+                        const unlockedAll: Partial<Record<EnemyArchetype, number>> = {};
+                        for (const arch of ENEMY_ARCHETYPE_KEYS) {
+                          unlockedAll[arch] = Math.max(1, mergedCounts[arch] ?? 0);
+                        }
+                        saveBestiaryDefeated(unlockedAll);
+                        setPersistedBestiary(unlockedAll);
+                      }}
+                      className="px-2.5 py-1 rounded bg-[#1f1930] hover:bg-[#2d2444] border border-[#f59e0b]/60 text-[10px] font-mono-tabular text-[#fde68a] cursor-pointer transition-colors"
+                    >
+                      Decipher All 12 Codex Entries
+                    </button>
+                  )}
+                </div>
+
+                {/* 12 Monster Archetype Hover Grid */}
+                <div
+                  aria-label="Bestiary Archetype Grid"
+                  className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-1.5"
                 >
-                  Login with Google (Save Cloud Progress)
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={handleStartOrRestart}
-                className="w-full py-2.5 rounded bg-[#1f1a30] hover:bg-[#2b2442] text-[#f4efe6] border border-[#3b2d4a] text-xs font-mono-tabular tracking-wider cursor-pointer transition-colors"
-              >
-                Restart Stage {hud.stageLevel}
-              </button>
-              <button
-                type="button"
-                onClick={handleReturnToTitle}
-                className="w-full py-2.5 rounded bg-[#14111f] hover:bg-[#1f1a30] text-[#c4b9a5] text-xs font-mono-tabular tracking-wider cursor-pointer transition-colors"
-              >
-                Return to Stage Select
-              </button>
+                  {ENEMY_ARCHETYPE_KEYS.map((arch) => {
+                    const meta = ENEMY_ARCHETYPE_CATALOG[arch];
+                    const killCount = mergedCounts[arch] ?? 0;
+                    const isDefeated = killCount > 0;
+                    const isInRoom = hud.activeRoomArchetypes.includes(arch);
+                    const isSelected = activeEntry.id === arch;
+
+                    return (
+                      <button
+                        key={arch}
+                        type="button"
+                        data-bestiary-archetype={arch}
+                        data-defeated={isDefeated ? 'true' : 'false'}
+                        onMouseEnter={() => setHoveredBestiaryArchetype(arch)}
+                        onFocus={() => setHoveredBestiaryArchetype(arch)}
+                        onClick={() => setHoveredBestiaryArchetype(arch)}
+                        className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded border text-left transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#261f3d] border-[#fde047] text-[#f4efe6]'
+                            : isDefeated
+                              ? 'bg-[#171324] hover:bg-[#221c35] border-[#3b2d4a] text-[#f4efe6]'
+                              : 'bg-[#0f0c18] hover:bg-[#191427] border-[#231b30] text-[#8c829e]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0 border border-[#09080d]"
+                            style={{ backgroundColor: meta.accentColor }}
+                          />
+                          <span className="text-[11px] font-semibold truncate">{meta.name}</span>
+                        </div>
+                        <span
+                          className={`text-[9px] font-mono-tabular px-1 py-0.5 rounded shrink-0 ${
+                            isDefeated
+                              ? 'bg-[#064e3b]/70 text-[#6ee7b7]'
+                              : isInRoom
+                                ? 'bg-[#78350f]/70 text-[#fde68a]'
+                                : 'bg-[#181326] text-[#685e78]'
+                          }`}
+                        >
+                          {isDefeated ? `×${killCount}` : isInRoom ? 'LIVE' : 'SCAN'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Hovered Monster Stats & Weakness Dossier */}
+                <div
+                  data-testid="bestiary-hover-dossier"
+                  data-inspected-archetype={activeEntry.id}
+                  className="mt-3.5 bg-[#0d0b14] border border-[#3b2d4a] rounded-md p-3.5 text-left"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-3.5 h-3.5 rounded-full border border-[#f4efe6]/40 shrink-0"
+                        style={{ backgroundColor: activeEntry.accentColor }}
+                      />
+                      <h3
+                        data-testid="bestiary-dossier-name"
+                        className="text-base font-display font-bold text-[#f4efe6]"
+                      >
+                        {activeEntry.name}
+                      </h3>
+                      <span className="text-[10px] font-mono-tabular uppercase px-2 py-0.5 rounded bg-[#1b162a] border border-[#3b2d4a] text-[#fde68a]">
+                        {activeEntry.role} · MIN STAGE {activeEntry.minStage}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 font-mono-tabular text-[10px]">
+                      {isLiveArenaHover && hud.hoveredArenaEnemy && (
+                        <span className="px-2 py-0.5 rounded bg-[#78350f] border border-[#fde047] text-[#fef08a] font-bold">
+                          ARENA TARGET LOCKED · {hud.hoveredArenaEnemy.hp}/{hud.hoveredArenaEnemy.maxHp} HP
+                        </span>
+                      )}
+                      <span
+                        className={`px-2 py-0.5 rounded border font-bold ${
+                          activeEntry.unlocked
+                            ? 'bg-[#064e3b]/60 border-[#10b981] text-[#6ee7b7]'
+                            : 'bg-[#1f1930] border-[#4c3b63] text-[#c4b9a5]'
+                        }`}
+                      >
+                        {activeEntry.unlocked
+                          ? `DEFEATED ×${activeEntry.defeatedCount}`
+                          : 'FIELD SCAN (DEFEAT TO RECORD)'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Stage-Scaled Numerical Stats */}
+                  <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono-tabular">
+                    <div className="bg-[#14111f] border border-[#2b2238] rounded px-2.5 py-1.5">
+                      <div className="text-[9px] text-[#a39887]">STAGE {hud.stageLevel} MAX HP</div>
+                      <div
+                        data-testid="bestiary-stat-hp"
+                        className="text-xs font-bold text-[#f43f5e]"
+                      >
+                        {activeEntry.scaledHp} HP{' '}
+                        <span className="text-[10px] font-normal text-[#8c829e]">
+                          (Base {ENEMY_ARCHETYPE_CATALOG[activeEntry.id].baseHp})
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#14111f] border border-[#2b2238] rounded px-2.5 py-1.5">
+                      <div className="text-[9px] text-[#a39887]">ATTACK DAMAGE</div>
+                      <div
+                        data-testid="bestiary-stat-damage"
+                        className="text-xs font-bold text-[#fb923c]"
+                      >
+                        {activeEntry.scaledDamage} DMG{' '}
+                        <span className="text-[10px] font-normal text-[#8c829e]">
+                          (Base {ENEMY_ARCHETYPE_CATALOG[activeEntry.id].baseDamage})
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#14111f] border border-[#2b2238] rounded px-2.5 py-1.5">
+                      <div className="text-[9px] text-[#a39887]">MOVE SPEED</div>
+                      <div
+                        data-testid="bestiary-stat-speed"
+                        className="text-xs font-bold text-[#38bdf8]"
+                      >
+                        {activeEntry.scaledSpeed} PX/S
+                      </div>
+                    </div>
+
+                    <div className="bg-[#14111f] border border-[#2b2238] rounded px-2.5 py-1.5">
+                      <div className="text-[9px] text-[#a39887]">VICTORY BOUNTY</div>
+                      <div className="text-xs font-bold text-[#fde047]">
+                        {activeEntry.xpReward} XP · {activeEntry.coinReward}c
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Monster Weakness & Tactical Counter Box */}
+                  <div
+                    data-testid="bestiary-weakness-box"
+                    className="mt-2.5 bg-[#191326] border border-[#f59e0b]/60 rounded p-2.5"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <StanceIcon stance={activeEntry.weaknessStance} />
+                        <div>
+                          <div className="text-[10px] font-mono-tabular uppercase tracking-wider text-[#fde047] font-bold">
+                            STANCE WEAKNESS: {activeEntry.weaknessStanceName.toUpperCase()} (+20% BONUS DMG)
+                          </div>
+                          <p className="text-[11px] text-[#f4efe6]">{activeEntry.weaknessSummary}</p>
+                        </div>
+                      </div>
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-[#a7f3d0] font-mono-tabular">
+                      COUNTER TACTIC: {activeEntry.counterTip}
+                    </p>
+                  </div>
+
+                  {/* Movement & Attack Behavior Signatures */}
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[#c4b9a5]">
+                    <div className="bg-[#120e1c] border border-[#241c33] rounded px-2.5 py-1.5">
+                      <span className="font-mono-tabular text-[10px] uppercase text-[#a39887]">
+                        MOVEMENT:{' '}
+                      </span>
+                      <span className="text-[#f4efe6]">{activeEntry.movementPattern}</span>
+                    </div>
+                    <div className="bg-[#120e1c] border border-[#241c33] rounded px-2.5 py-1.5">
+                      <span className="font-mono-tabular text-[10px] uppercase text-[#a39887]">
+                        ATTACK:{' '}
+                      </span>
+                      <span className="text-[#f4efe6]">{activeEntry.attackPattern}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        </section>
-      )}
+          </section>
+        );
+      })()}
 
       {/* =====================================================================
           STATE 4: VICTORY / GAME OVER OUTCOME MODAL CARD
