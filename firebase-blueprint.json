@@ -55,6 +55,85 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public Global Sanctum Leaderboard record for a player, tracking high score, furthest stage, fastest speedrun time, daily challenge score, and boss rush depth.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Immutable Firebase Auth UID of the player.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Public display name of the Solar Warden (no PII).",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "bestScore": {
+          "type": "number",
+          "description": "Highest score achieved across runs."
+        },
+        "highestStage": {
+          "type": "number",
+          "description": "Furthest stage reached or cleared (1 to 10)."
+        },
+        "fastestClearTimeSec": {
+          "type": "number",
+          "description": "Fastest stage clear time in seconds (1 to 86400)."
+        },
+        "dailySeed": {
+          "type": "string",
+          "description": "Daily challenge seed identifier (e.g. SOLAR-20261029).",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "dailyScore": {
+          "type": "number",
+          "description": "Best score achieved on the recorded daily challenge seed."
+        },
+        "bossRushWaves": {
+          "type": "number",
+          "description": "Highest number of Boss Rush / Endless Abyss waves cleared."
+        },
+        "bossRushScore": {
+          "type": "number",
+          "description": "Highest score achieved in Boss Rush / Endless Abyss mode."
+        },
+        "favoriteStance": {
+          "type": "string",
+          "description": "Primary weapon stance used by the player.",
+          "enum": ["dawnblade", "astral_bow", "chrono_scythe"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the leaderboard entry was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the leaderboard entry was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "bestScore",
+        "highestStage",
+        "fastestClearTimeSec",
+        "dailySeed",
+        "dailyScore",
+        "bossRushWaves",
+        "bossRushScore",
+        "favoriteStance",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -63,6 +142,12 @@
         "$ref": "#/entities/PlayerProgress"
       },
       "description": "Per-user progression document keyed by the authenticated user's UID."
+    },
+    "/leaderboardEntries/{userId}": {
+      "schema": {
+        "$ref": "#/entities/LeaderboardEntry"
+      },
+      "description": "Public leaderboard record keyed by the authenticated user's UID."
     }
   }
 }

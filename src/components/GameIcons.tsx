@@ -1,5 +1,5 @@
 import React from 'react';
-import { SkillId, UsableItemId, WeaponStanceId } from '../game/rules';
+import { ElementalDebuffId, FamiliarId, SkillId, UsableItemId, WeaponStanceId } from '../game/rules';
 
 export function TitleCrestEmblem() {
   return (
@@ -140,8 +140,32 @@ export function VitalityHeartPip({ state }: { state: 'full' | 'cracked' | 'empty
   );
 }
 
-export function StanceIcon({ stance }: { stance: WeaponStanceId }) {
+export function StanceIcon({
+  stance,
+  awakened = false,
+}: {
+  stance: WeaponStanceId;
+  awakened?: boolean;
+}) {
   if (stance === 'dawnblade') {
+    if (awakened) {
+      return (
+        <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
+          <rect x="2" y="2" width="20" height="20" rx="3" fill="#09080d" stroke="#fbbf24" strokeWidth="1.3" />
+          <path
+            d="M6.5 5.5A8.5 8.5 0 0 1 18.5 17.5"
+            stroke="#f43f5e"
+            strokeWidth="2"
+            strokeLinecap="round"
+            fill="none"
+          />
+          <path d="M18.8 3.8L20.2 5.2L9.8 15.6L7.4 13.2L17.8 2.8Z" fill="#fbbf24" />
+          <path d="M18.8 3.8L13 9.6L11.6 8.2L17.8 2.8Z" fill="#fef08a" />
+          <path d="M5.5 11.5L12.5 18.5L10.8 20.2L3.8 13.2Z" fill="#e11d48" />
+          <circle cx="15" cy="9" r="1.8" fill="#fffbeb" />
+        </svg>
+      );
+    }
     return (
       <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
         <rect x="2" y="2" width="20" height="20" rx="3" fill="#09080d" />
@@ -153,6 +177,23 @@ export function StanceIcon({ stance }: { stance: WeaponStanceId }) {
     );
   }
   if (stance === 'astral_bow') {
+    if (awakened) {
+      return (
+        <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
+          <rect x="2" y="2" width="20" height="20" rx="3" fill="#09080d" stroke="#7dd3fc" strokeWidth="1.3" />
+          <path
+            d="M6.5 4.5C14.5 6 18 9.5 19.5 17.5"
+            stroke="#38bdf8"
+            strokeWidth="2.5"
+            fill="none"
+            strokeLinecap="round"
+          />
+          <path d="M5.5 18.5L17.8 6.2M17.8 6.2H13.2M17.8 6.2V10.8" stroke="#fef08a" strokeWidth="2" strokeLinecap="round" />
+          <circle cx="8" cy="9" r="1.7" fill="#fde047" />
+          <circle cx="15" cy="16" r="1.7" fill="#7dd3fc" />
+        </svg>
+      );
+    }
     return (
       <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
         <rect x="2" y="2" width="20" height="20" rx="3" fill="#09080d" />
@@ -165,6 +206,22 @@ export function StanceIcon({ stance }: { stance: WeaponStanceId }) {
         />
         <line x1="7" y1="4.5" x2="19.5" y2="17" stroke="#bae6fd" strokeWidth="1.2" />
         <path d="M6 18L17.5 6.5M17.5 6.5L13.5 6.5M17.5 6.5L17.5 10.5" stroke="#e0f2fe" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  if (awakened) {
+    return (
+      <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
+        <rect x="2" y="2" width="20" height="20" rx="3" fill="#09080d" stroke="#e879f9" strokeWidth="1.3" />
+        <circle cx="12" cy="12" r="5.5" stroke="#38bdf8" strokeWidth="1.2" strokeDasharray="2 2" fill="none" />
+        <path
+          d="M5.5 6.5C10 2.8 17 3.5 19.5 8.5C15.5 7.2 11.2 8.2 9 11.5Z"
+          fill="#e879f9"
+          stroke="#fae8ff"
+          strokeWidth="1.1"
+        />
+        <line x1="17.8" y1="6.2" x2="6.2" y2="19.8" stroke="#c084fc" strokeWidth="2.4" strokeLinecap="round" />
+        <circle cx="12" cy="12" r="2.1" fill="#fde047" />
       </svg>
     );
   }
@@ -339,4 +396,146 @@ export function UsableItemIcon({ itemId }: { itemId: UsableItemId }) {
   );
 }
 
+export function FamiliarIcon({ familiarId }: { familiarId: FamiliarId }) {
+  if (familiarId === 'ember_wisp') {
+    return (
+      <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
+        <rect x="2" y="2" width="20" height="20" rx="4" fill="#09080d" stroke="#fb7185" strokeWidth="1.3" />
+        <path
+          d="M12 4.5C15.2 7.8 17.5 10.5 17.5 13.8C17.5 17 15 19.5 12 19.5C9 19.5 6.5 17 6.5 13.8C6.5 10.5 8.8 7.8 12 4.5Z"
+          fill="#f43f5e"
+          stroke="#fda4af"
+          strokeWidth="1.1"
+        />
+        <circle cx="12" cy="14" r="2.8" fill="#fde047" />
+        <circle cx="9.8" cy="12.5" r="0.9" fill="#09080d" />
+        <circle cx="14.2" cy="12.5" r="0.9" fill="#09080d" />
+      </svg>
+    );
+  }
+  if (familiarId === 'aegis_cherub') {
+    return (
+      <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
+        <rect x="2" y="2" width="20" height="20" rx="4" fill="#09080d" stroke="#38bdf8" strokeWidth="1.3" />
+        {/* Halo */}
+        <ellipse cx="12" cy="6" rx="4.2" ry="1.4" stroke="#fde047" strokeWidth="1.4" fill="none" />
+        {/* Wings */}
+        <path d="M5 11C7.2 8.5 9.2 9.5 10 12C8.2 13.5 6.2 13.2 5 11Z" fill="#bae6fd" />
+        <path d="M19 11C16.8 8.5 14.8 9.5 14 12C15.8 13.5 17.8 13.2 19 11Z" fill="#bae6fd" />
+        {/* Cherub Shield Core */}
+        <path
+          d="M12 8.5L16 10.2V14.2C16 16.8 14.2 18.8 12 19.6C9.8 18.8 8 16.8 8 14.2V10.2L12 8.5Z"
+          fill="#0284c7"
+          stroke="#fef08a"
+          strokeWidth="1.2"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" aria-hidden="true">
+      <rect x="2" y="2" width="20" height="20" rx="4" fill="#09080d" stroke="#34d399" strokeWidth="1.3" />
+      {/* Imp Horns */}
+      <path d="M8.5 8.5L6.5 5L10.2 7.2ZM15.5 8.5L17.5 5L13.8 7.2Z" fill="#fde047" />
+      {/* Imp Head & Magnet Aura */}
+      <circle cx="12" cy="12.5" r="5" fill="#059669" stroke="#6ee7b7" strokeWidth="1.2" />
+      <circle cx="10.2" cy="12" r="1.1" fill="#fde047" />
+      <circle cx="13.8" cy="12" r="1.1" fill="#fde047" />
+      <path d="M9.8 14.8Q12 16.4 14.2 14.8" stroke="#fef08a" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+    </svg>
+  );
+}
 
+export function DebuffIcon({
+  debuffId,
+  className = 'w-4 h-4 shrink-0',
+}: {
+  debuffId: ElementalDebuffId;
+  className?: string;
+}) {
+  if (debuffId === 'burned') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+        <rect
+          x="1.5"
+          y="1.5"
+          width="21"
+          height="21"
+          rx="4.5"
+          fill="#09080d"
+          stroke="#f97316"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M12 4.2C14.8 7.4 17.5 10.1 17.5 13.8C17.5 17.2 15 19.6 12 19.6C9 19.6 6.5 17.2 6.5 13.8C6.5 11.2 8.1 9.1 9.6 7.3C9.8 8.9 10.6 9.8 11.4 10.2C11.1 8.1 11.3 6.1 12 4.2Z"
+          fill="#fb923c"
+          stroke="#fdba74"
+          strokeWidth="1"
+        />
+        <path
+          d="M12 10.8C13.5 12.2 14.4 13.5 14.4 15.1C14.4 16.7 13.3 17.9 12 17.9C10.7 17.9 9.6 16.7 9.6 15.1C9.6 13.5 10.5 12.2 12 10.8Z"
+          fill="#fef08a"
+        />
+      </svg>
+    );
+  }
+
+  if (debuffId === 'sundered') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+        <rect
+          x="1.5"
+          y="1.5"
+          width="21"
+          height="21"
+          rx="4.5"
+          fill="#09080d"
+          stroke="#f43f5e"
+          strokeWidth="1.5"
+        />
+        <path
+          d="M12 4.2L17.8 6.6V12.2C17.8 15.8 15.3 18.6 12 19.8C8.7 18.6 6.2 15.8 6.2 12.2V6.6L12 4.2Z"
+          fill="#9f1239"
+          stroke="#fda4af"
+          strokeWidth="1.2"
+        />
+        <path
+          d="M13.2 4.8L10.4 11.4L13.5 12.3L10.6 19.2"
+          stroke="#fef08a"
+          strokeWidth="1.8"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          fill="none"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <rect
+        x="1.5"
+        y="1.5"
+        width="21"
+        height="21"
+        rx="4.5"
+        fill="#09080d"
+        stroke="#38bdf8"
+        strokeWidth="1.5"
+      />
+      <path
+        d="M12 4.5V19.5M5.5 8.2L18.5 15.8M18.5 8.2L5.5 15.8"
+        stroke="#67e8f9"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <polygon
+        points="12,7.5 15.8,12 12,16.5 8.2,12"
+        fill="#0284c7"
+        stroke="#e0f2fe"
+        strokeWidth="1.1"
+      />
+      <circle cx="12" cy="12" r="1.8" fill="#fef9c3" />
+    </svg>
+  );
+}

@@ -1,22 +1,38 @@
 import React, { useEffect, useRef } from 'react';
 import {
+  ActiveDebuffView,
+  ArenaHazard,
   ArenaWorldState,
   ARENA_HEIGHT,
   ARENA_WIDTH,
+  CombatLogEntry,
+  computeScreenShakeOffset,
   DoorDirection,
   DungeonRoom,
   ENEMY_ARCHETYPE_CATALOG,
   EnemyArchetype,
+  FAMILIAR_CATALOG,
+  FamiliarId,
+  findInteractableShrine,
   FrameInput,
+  GameMode,
   GamePhase,
+  getActiveCombatLogEntries,
   getDoorWorldPosition,
+  getEnemyActiveDebuffs,
+  getPlayerActiveDebuffs,
+  getRoomEnemyDebuffSummary,
   InventorySlot,
   RelicOption,
   RunSnapshot,
+  SCREEN_SHAKE_PROFILES,
+  ScreenShakeReason,
+  ScreenShakeSample,
   SkillChoiceOption,
   SkillId,
   stepArenaWorld,
   USABLE_ITEMS,
+  WEAPON_EVOLUTIONS,
   WEAPON_STANCES,
   WeaponStanceId,
 } from '../game/rules';
@@ -29,9 +45,15 @@ export interface HoveredArenaEnemyHud {
   maxHp: number;
   x: number;
   y: number;
+  debuffs?: ActiveDebuffView[];
 }
 
 export interface HudDiscreteState {
+  gameMode: GameMode;
+  dailySeed: string;
+  bossRushCycle: number;
+  bossRushWavesCleared: number;
+  elapsedSeconds: number;
   stageLevel: number;
   hp: number;
   maxHp: number;
@@ -50,6 +72,15 @@ export interface HudDiscreteState {
   bestScore: number;
   comboCount: number;
   stance: WeaponStanceId;
+  awakenedStances: Partial<Record<WeaponStanceId, boolean>>;
+  dawnbladeSwingCount: number;
+  activeFamiliar: FamiliarId | null;
+  unlockedFamiliars: Partial<Record<FamiliarId, boolean>>;
+  cherubShieldActive: boolean;
+  cherubShieldCooldownRemaining: number;
+  collectedRelics: string[];
+  lastAwakenedStance: WeaponStanceId | null;
+  awakeningBannerActive: boolean;
   bossHpPercent: number | null;
   bossName: string | null;
   skills: Array<{ id: SkillId; rank: number }>;
@@ -58,6 +89,14 @@ export interface HudDiscreteState {
   defeatedByArchetype: Partial<Record<EnemyArchetype, number>>;
   activeRoomArchetypes: EnemyArchetype[];
   hoveredArenaEnemy: HoveredArenaEnemyHud | null;
+  hazards: ArenaHazard[];
+  nearbyShrine: ArenaHazard | null;
+  damageMultiplier: number;
+  playerDebuffs: ActiveDebuffView[];
+  enemyDebuffSummary: { burnedCount: number; slowedCount: number; sunderedCount: number };
+  thermalShockCount: number;
+  solarMeltdownCount: number;
+  combatLog: CombatLogEntry[];
 }
 
 interface ArenaCanvasProps {
@@ -353,6 +392,11 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
     let titlePanTime = 0;
     let cameraOffsetX = 0;
     let cameraOffsetY = 0;
+    let cameraRotationRad = 0;
+    let shakeImpulseX = 0;
+    let shakeImpulseY = 0;
+    let lastShakeActiveAttr = 'false';
+    let lastShakeReasonAttr: ScreenShakeReason = 'none';
     let lastHudHash = '';
     let lastHpTransform = '';
     let lastGhostHpTransform = '';
@@ -420,6 +464,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           justPressedKeys.has('Space') || justPressedKeys.has('ShiftLeft');
         const novaJustPressed =
           rightMouseJustPressed || justPressedKeys.has('KeyE') || justPressedKeys.has('KeyQ');
+        const cycleFamiliarJustPressed = justPressedKeys.has('KeyF');
+        const interactJustPressed = justPressedKeys.has('KeyG');
 
         const input: FrameInput = {
           moveX,
@@ -432,6 +478,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           novaJustPressed,
           stanceSelect,
           useItemSlot,
+          cycleFamiliarJustPressed,
+          interactJustPressed,
         };
 
         // Consume edge triggers
@@ -445,25 +493,55 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
         if (simEvents.playerSwung) {
           soundEngine.playSwing(simEvents.playerSwung);
         }
+        if (simEvents.familiarFired) {
+          soundEngine.playSwing('astral_bow');
+        }
+        if (simEvents.cherubShieldBlocked) {
+          soundEngine.playPickup();
+        }
+        if (simEvents.brazierDetonated) {
+          soundEngine.playNova();
+          const ang = world.screenShakeAngle;
+          shakeImpulseX += Math.cos(ang) * 14 + (Math.random() * 2 - 1) * 6;
+          shakeImpulseY += Math.sin(ang) * 14 + (Math.random() * 2 - 1) * 6;
+        }
+        if (simEvents.spikeTrapTriggered) {
+          soundEngine.playHit(false);
+        }
+        if (simEvents.shrineActivated) {
+          soundEngine.playLevelUp();
+        }
         if (simEvents.playerDashed || simEvents.roomChanged) {
           soundEngine.playDash();
+        }
+        if (simEvents.perfectDodge) {
+          soundEngine.playPickup();
         }
         if (simEvents.playerNova) {
           soundEngine.playNova();
         }
-        if (simEvents.playerLeveledUp) {
+        if (simEvents.playerLeveledUp || simEvents.stanceAwakened) {
           soundEngine.playLevelUp();
         }
         if (simEvents.itemUsed) {
           soundEngine.playPickup();
         }
+        if (simEvents.criticalStrike) {
+          soundEngine.playCriticalHit();
+          const ang = world.screenShakeAngle;
+          shakeImpulseX += Math.cos(ang) * 10;
+          shakeImpulseY += Math.sin(ang) * 10;
+        }
         if (simEvents.enemiesKilled > 0) {
           soundEngine.playHit(true);
-        } else if (simEvents.enemiesHit > 0) {
+        } else if (simEvents.enemiesHit > 0 && !simEvents.criticalStrike) {
           soundEngine.playHit(false);
         }
         if (simEvents.playerHurt) {
           soundEngine.playPlayerHurt();
+          const ang = world.screenShakeAngle;
+          shakeImpulseX += Math.cos(ang) * 16 + (Math.random() * 2 - 1) * 7;
+          shakeImpulseY += Math.sin(ang) * 16 + (Math.random() * 2 - 1) * 7;
         }
         if (simEvents.pickupCollected || simEvents.coinCollected) {
           soundEngine.playPickup();
@@ -587,6 +665,7 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
               maxHp: Math.round(e.maxHp),
               x: Math.round(e.x),
               y: Math.round(e.y),
+              debuffs: getEnemyActiveDebuffs(e),
             };
           }
         }
@@ -602,11 +681,46 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       const hoverSig = hoveredArenaEnemy
         ? `${hoveredArenaEnemy.id}:${hoveredArenaEnemy.archetype}:${hoveredArenaEnemy.hp}`
         : 'none';
+      const awakenedSig = (['dawnblade', 'astral_bow', 'chrono_scythe'] as WeaponStanceId[])
+        .filter((st) => p.awakenedStances[st])
+        .join(',');
+      const unlockedFamSig = (['ember_wisp', 'aegis_cherub', 'greed_imp'] as FamiliarId[])
+        .filter((f) => p.unlockedFamiliars[f])
+        .join(',');
+      const cherubRem = p.cherubShieldActive
+        ? 0
+        : Math.max(0, Math.ceil(20 - p.cherubShieldTimer));
+      const relicsSig = world.collectedRelics.join(',');
+      const bannerActive = world.awakeningBannerTimer > 0;
+      const quantizedTime = Math.floor(world.elapsedSeconds * 5) / 5;
+      const nearbyShrine = findInteractableShrine(world, 95);
+      const hazardsSig = world.hazards
+        .map(
+          (h) =>
+            `${h.id}:${h.kind}:${h.used ? 1 : 0}:${Math.ceil(h.cooldown)}:${h.spikePhase}`
+        )
+        .join(',');
+      const nearbySig = nearbyShrine ? `${nearbyShrine.id}:${nearbyShrine.kind}` : 'none';
+      const playerDebuffs = getPlayerActiveDebuffs(p);
+      const playerDebuffSig = playerDebuffs
+        .map((d) => `${d.id}:${d.stacks}:${Math.ceil(d.remainingSeconds * 5)}`)
+        .join(',');
+      const enemyDebuffSummary = getRoomEnemyDebuffSummary(world);
+      const enemyDebuffSig = `${enemyDebuffSummary.burnedCount}:${enemyDebuffSummary.slowedCount}:${enemyDebuffSummary.sunderedCount}:${world.thermalShockCount}:${world.solarMeltdownCount}`;
+      const combatLog = getActiveCombatLogEntries(world);
+      const combatLogSig = combatLog
+        .map((c) => `${c.id}:${c.detail}:${Math.floor(c.age * 8)}`)
+        .join(',');
 
-      const hudHash = `${world.stageLevel}|${Math.round(p.hp)}|${p.maxHp}|${quantizedEssence}|${p.maxEssence}|${p.level}|${Math.round(p.xp)}|${p.xpToNextLevel}|${p.coins}|${invSig}|${world.currentRoomIndex}|${roomsSig}|${world.wave}|${Math.round(world.score)}|${Math.round(world.bestScore)}|${world.comboCount}|${p.stance}|${bossHpPct}|${skillsSig}|${world.skillChoices.length}|${world.relicChoices.length}|${defeatedSig}|${activeArchSig}|${hoverSig}`;
+      const hudHash = `${world.gameMode}|${world.dailySeed}|${world.bossRushCycle}|${world.bossRushWavesCleared}|${quantizedTime}|${world.stageLevel}|${Math.round(p.hp)}|${p.maxHp}|${quantizedEssence}|${p.maxEssence}|${p.level}|${Math.round(p.xp)}|${p.xpToNextLevel}|${p.coins}|${invSig}|${world.currentRoomIndex}|${roomsSig}|${world.wave}|${Math.round(world.score)}|${Math.round(world.bestScore)}|${world.comboCount}|${p.stance}|${awakenedSig}|${p.dawnbladeSwingCount}|${p.activeFamiliar}|${unlockedFamSig}|${p.cherubShieldActive}|${cherubRem}|${relicsSig}|${world.lastAwakenedStance}|${bannerActive}|${bossHpPct}|${skillsSig}|${world.skillChoices.length}|${world.relicChoices.length}|${defeatedSig}|${activeArchSig}|${hoverSig}|${hazardsSig}|${nearbySig}|${p.damageMultiplier}|${playerDebuffSig}|${enemyDebuffSig}|${combatLogSig}`;
       if (hudHash !== lastHudHash) {
         lastHudHash = hudHash;
         callbacksRef.current.onSyncHud({
+          gameMode: world.gameMode,
+          dailySeed: world.dailySeed,
+          bossRushCycle: world.bossRushCycle,
+          bossRushWavesCleared: world.bossRushWavesCleared,
+          elapsedSeconds: Number(world.elapsedSeconds.toFixed(1)),
           stageLevel: world.stageLevel,
           hp: Math.round(p.hp),
           maxHp: p.maxHp,
@@ -625,6 +739,15 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           bestScore: Math.round(world.bestScore),
           comboCount: world.comboCount,
           stance: p.stance,
+          awakenedStances: { ...p.awakenedStances },
+          dawnbladeSwingCount: p.dawnbladeSwingCount ?? 0,
+          activeFamiliar: p.activeFamiliar,
+          unlockedFamiliars: { ...p.unlockedFamiliars },
+          cherubShieldActive: p.cherubShieldActive,
+          cherubShieldCooldownRemaining: cherubRem,
+          collectedRelics: [...world.collectedRelics],
+          lastAwakenedStance: world.lastAwakenedStance,
+          awakeningBannerActive: bannerActive,
           bossHpPercent: bossHpPct,
           bossName: boss ? 'Archon of the Corona' : null,
           skills: learnedSkills,
@@ -633,6 +756,14 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
           defeatedByArchetype: { ...world.defeatedByArchetype },
           activeRoomArchetypes,
           hoveredArenaEnemy,
+          hazards: world.hazards.map((h) => ({ ...h })),
+          nearbyShrine: nearbyShrine ? { ...nearbyShrine } : null,
+          damageMultiplier: p.damageMultiplier,
+          playerDebuffs,
+          enemyDebuffSummary,
+          thermalShockCount: world.thermalShockCount,
+          solarMeltdownCount: world.solarMeltdownCount,
+          combatLog,
         });
       }
 
@@ -647,27 +778,48 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       ctx.fillStyle = '#09080d';
       ctx.fillRect(0, 0, viewportW, viewportH);
 
-      // Camera Pan on Title Screen vs Gameplay Trauma Shake
+      // Camera Pan on Title Screen vs Gameplay Screen-Shake (Player Hurt / Critical Strike / Solar Brazier)
+      const shakeSample = computeScreenShakeOffset(world, now / 1000);
       if (world.phase === 'title') {
         titlePanTime += clampedDt;
         cameraOffsetX = Math.sin(titlePanTime * 0.45) * 32;
         cameraOffsetY = 64 + Math.cos(titlePanTime * 0.32) * 16;
+        cameraRotationRad = 0;
       } else {
-        cameraOffsetX *= Math.pow(0.01, clampedDt);
-        cameraOffsetY *= Math.pow(0.01, clampedDt);
-        const shakeMag = world.cameraTrauma * world.cameraTrauma * 16;
-        cameraOffsetX += (Math.random() * 2 - 1) * shakeMag;
-        cameraOffsetY += (Math.random() * 2 - 1) * shakeMag;
+        shakeImpulseX *= Math.pow(0.002, clampedDt);
+        shakeImpulseY *= Math.pow(0.002, clampedDt);
+        cameraOffsetX = shakeSample.offsetX + shakeImpulseX;
+        cameraOffsetY = shakeSample.offsetY + shakeImpulseY;
+        cameraRotationRad = shakeSample.rotationRad;
       }
 
+      const nextShakeActiveAttr = shakeSample.active ? 'true' : 'false';
+      if (nextShakeActiveAttr !== lastShakeActiveAttr) {
+        lastShakeActiveAttr = nextShakeActiveAttr;
+        canvas.dataset.shakeActive = nextShakeActiveAttr;
+      }
+      if (world.lastScreenShakeReason !== lastShakeReasonAttr) {
+        lastShakeReasonAttr = world.lastScreenShakeReason;
+        canvas.dataset.lastShakeReason = world.lastScreenShakeReason;
+      }
+
+      const centerScreenX = renderOffsetX + ARENA_WIDTH * 0.5 * renderScale;
+      const centerScreenY = renderOffsetY + ARENA_HEIGHT * 0.5 * renderScale;
       ctx.translate(
-        renderOffsetX + cameraOffsetX * renderScale,
-        renderOffsetY + cameraOffsetY * renderScale
+        centerScreenX + cameraOffsetX * renderScale,
+        centerScreenY + cameraOffsetY * renderScale
       );
+      if (cameraRotationRad !== 0) {
+        ctx.rotate(cameraRotationRad);
+      }
       ctx.scale(renderScale, renderScale);
+      ctx.translate(-ARENA_WIDTH * 0.5, -ARENA_HEIGHT * 0.5);
 
       drawArenaFloorAndPillars(ctx, world, now / 1000);
+      drawSanctumHazards(ctx, world, now / 1000);
       drawEmberZones(ctx, world, now / 1000);
+      drawVortexVisuals(ctx, world, now / 1000);
+      drawReactionVisuals(ctx, world, now / 1000);
       drawPickups(ctx, world, now / 1000);
       drawEnemyTelegraphs(ctx, world);
       drawEnemies(ctx, world, now / 1000);
@@ -676,6 +828,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       drawLightningArcs(ctx, world);
       drawProjectiles(ctx, world);
       drawParticles(ctx, particlePool);
+      drawCriticalStrikeCallout(ctx, world);
+      drawScreenShakeImpactRim(ctx, world, shakeSample);
       drawWaveBanner(ctx, world);
 
       ctx.restore();
@@ -713,6 +867,8 @@ export const ArenaCanvas: React.FC<ArenaCanvasProps> = ({
       <canvas
         ref={canvasRef}
         data-testid="arena-canvas"
+        data-shake-active="false"
+        data-last-shake-reason="none"
         className="block w-full h-full cursor-crosshair"
       />
     </div>
@@ -843,6 +999,312 @@ function drawArenaFloorAndPillars(
   }
 }
 
+function drawSanctumHazards(
+  ctx: CanvasRenderingContext2D,
+  world: ArenaWorldState,
+  timeSec: number
+): void {
+  const p = world.player;
+
+  for (const hazard of world.hazards) {
+    ctx.save();
+    ctx.translate(hazard.x, hazard.y);
+
+    // 1. SPIKE RUNES (Lantai Berduri Runik)
+    if (hazard.kind === 'spike_rune') {
+      const r = hazard.radius;
+      const isWarning = hazard.spikePhase === 'warning';
+      const isActive = hazard.spikePhase === 'active';
+
+      // Base octagonal runic floor plate
+      ctx.fillStyle = isActive
+        ? 'rgba(136, 19, 55, 0.52)'
+        : isWarning
+        ? 'rgba(124, 45, 18, 0.42)'
+        : 'rgba(20, 16, 31, 0.78)';
+      ctx.strokeStyle = isActive
+        ? '#f43f5e'
+        : isWarning
+        ? '#fb923c'
+        : 'rgba(148, 163, 184, 0.28)';
+      ctx.lineWidth = isActive ? 2.5 : isWarning ? 2 : 1.5;
+
+      ctx.beginPath();
+      for (let i = 0; i < 8; i++) {
+        const ang = (i * Math.PI * 2) / 8 + Math.PI / 8;
+        const px = Math.cos(ang) * r;
+        const py = Math.sin(ang) * r;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      // Inner runic circle
+      ctx.strokeStyle = isActive
+        ? 'rgba(253, 164, 175, 0.75)'
+        : isWarning
+        ? 'rgba(253, 224, 71, 0.65)'
+        : 'rgba(148, 163, 184, 0.16)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.64, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Draw 9 spike sockets / emerging spikes
+      const spikePositions = [
+        { x: 0, y: 0 },
+        { x: -15, y: -14 },
+        { x: 15, y: -14 },
+        { x: -15, y: 14 },
+        { x: 15, y: 14 },
+        { x: 0, y: -22 },
+        { x: 0, y: 22 },
+        { x: -22, y: 0 },
+        { x: 22, y: 0 },
+      ];
+
+      for (const sp of spikePositions) {
+        if (isActive) {
+          // Extended lethal crimson-steel spikes jutting up
+          ctx.fillStyle = '#09080d';
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y + 2, 4.5, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.fillStyle = '#fda4af';
+          ctx.strokeStyle = '#e11d48';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(sp.x - 4.5, sp.y + 3);
+          ctx.lineTo(sp.x, sp.y - 12);
+          ctx.lineTo(sp.x + 4.5, sp.y + 3);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (isWarning) {
+          // Pulsing amber spike tips telegraphing imminent impale
+          const warnPulse = 0.55 + Math.sin(timeSec * 18) * 0.4;
+          ctx.fillStyle = `rgba(251, 191, 36, ${warnPulse.toFixed(2)})`;
+          ctx.beginPath();
+          ctx.moveTo(sp.x - 3.5, sp.y + 2);
+          ctx.lineTo(sp.x, sp.y - 5);
+          ctx.lineTo(sp.x + 3.5, sp.y + 2);
+          ctx.closePath();
+          ctx.fill();
+        } else {
+          // Dormant spike holes
+          ctx.fillStyle = '#09080d';
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      if (isWarning || isActive) {
+        ctx.fillStyle = isActive ? '#fda4af' : '#fde047';
+        ctx.font = '700 9px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(isActive ? 'SPIKES ACTIVE' : 'SPIKES [!]', 0, r + 11);
+      }
+
+      ctx.restore();
+      continue;
+    }
+
+    // 2. SOLAR BRAZIER (Tungku Api Surya)
+    if (hazard.kind === 'solar_brazier') {
+      const isReady = hazard.cooldown <= 0;
+      const r = hazard.radius;
+
+      // Detonation shockwave pulse when struck
+      if (hazard.pulseTimer > 0) {
+        const prog = 1 - hazard.pulseTimer / 0.48;
+        const blastR = r + prog * (hazard.blastRadius - r);
+        ctx.strokeStyle = `rgba(251, 146, 60, ${(1 - prog) * 0.9})`;
+        ctx.fillStyle = `rgba(249, 115, 22, ${(1 - prog) * 0.22})`;
+        ctx.lineWidth = 4.5 * (1 - prog * 0.5);
+        ctx.beginPath();
+        ctx.arc(0, 0, blastR, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Faint tactical blast radius ring when ready
+      if (isReady) {
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.14)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([5, 5]);
+        ctx.beginPath();
+        ctx.arc(0, 0, hazard.blastRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Shadow & ornate bronze-obsidian brazier bowl
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+      ctx.beginPath();
+      ctx.arc(3, 5, r + 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#1c1526';
+      ctx.strokeStyle = isReady ? '#f59e0b' : '#475569';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      if (isReady) {
+        // Ignited flickering solar flame core
+        const flicker = Math.sin(timeSec * 14 + hazard.id) * 2.5;
+        ctx.fillStyle = '#ea580c';
+        ctx.beginPath();
+        ctx.arc(0, 0, r * 0.68, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#fb923c';
+        ctx.beginPath();
+        ctx.moveTo(-10, 4);
+        ctx.quadraticCurveTo(-6, -14 + flicker, 0, -18 - flicker);
+        ctx.quadraticCurveTo(6, -14 - flicker, 10, 4);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.fillStyle = '#fef08a';
+        ctx.beginPath();
+        ctx.arc(0, -2, 6, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#fed7aa';
+        ctx.font = '700 9px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('SOLAR BRAZIER [HIT]', 0, r + 12);
+      } else {
+        // Cooling down / re-igniting progress arc
+        const pct = 1 - hazard.cooldown / Math.max(0.1, hazard.cooldownMax);
+        ctx.strokeStyle = '#fb923c';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, r - 4, -Math.PI * 0.5, -Math.PI * 0.5 + pct * Math.PI * 2);
+        ctx.stroke();
+
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '700 9px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${hazard.cooldown.toFixed(1)}s`, 0, 3);
+      }
+
+      ctx.restore();
+      continue;
+    }
+
+    // 3. CURSED ALTAR & HEALING FOUNTAIN (Altar Kutukan Darah & Mata Air Suci)
+    if (hazard.kind === 'cursed_altar' || hazard.kind === 'healing_fountain') {
+      const isCursed = hazard.kind === 'cursed_altar';
+      const r = hazard.radius;
+      const distToPlayer = Math.hypot(p.x - hazard.x, p.y - hazard.y);
+      const isPlayerNear = !hazard.used && distToPlayer <= 95;
+      const pulse = 0.65 + Math.sin(timeSec * 4.5 + hazard.id) * 0.25;
+
+      // Activation pulse ring
+      if (hazard.pulseTimer > 0) {
+        const prog = 1 - hazard.pulseTimer / 0.6;
+        ctx.strokeStyle = isCursed
+          ? `rgba(225, 29, 72, ${(1 - prog) * 0.9})`
+          : `rgba(16, 185, 129, ${(1 - prog) * 0.9})`;
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, r + prog * 65, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // Outer sanctuary aura
+      if (!hazard.used) {
+        ctx.fillStyle = isCursed
+          ? `rgba(225, 29, 72, ${(0.14 * pulse).toFixed(2)})`
+          : `rgba(16, 185, 129, ${(0.14 * pulse).toFixed(2)})`;
+        ctx.strokeStyle = isCursed
+          ? `rgba(244, 63, 94, ${(0.55 * pulse).toFixed(2)})`
+          : `rgba(52, 211, 153, ${(0.55 * pulse).toFixed(2)})`;
+        ctx.lineWidth = isPlayerNear ? 2.5 : 1.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+
+      // Pedestal base
+      ctx.fillStyle = '#161224';
+      ctx.strokeStyle = hazard.used
+        ? '#475569'
+        : isCursed
+        ? '#e11d48'
+        : '#10b981';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Inner chalice / emblem
+      if (isCursed) {
+        ctx.fillStyle = hazard.used ? '#334155' : '#be123c';
+        ctx.beginPath();
+        ctx.moveTo(0, -13);
+        ctx.lineTo(11, 0);
+        ctx.lineTo(0, 13);
+        ctx.lineTo(-11, 0);
+        ctx.closePath();
+        ctx.fill();
+
+        if (!hazard.used) {
+          ctx.fillStyle = '#fda4af';
+          ctx.beginPath();
+          ctx.arc(0, 0, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.fillStyle = hazard.used ? '#334155' : '#059669';
+        ctx.beginPath();
+        ctx.arc(0, 0, 13, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (!hazard.used) {
+          ctx.fillStyle = '#6ee7b7';
+          ctx.fillRect(-2.5, -8, 5, 16);
+          ctx.fillRect(-8, -2.5, 16, 5);
+        }
+      }
+
+      // Label below shrine
+      ctx.font = '700 9.5px JetBrains Mono, monospace';
+      ctx.textAlign = 'center';
+      if (hazard.used) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillText(hazard.rewardLabel || 'SHRINE USED', 0, r + 14);
+      } else if (isPlayerNear) {
+        ctx.fillStyle = isCursed ? '#fecdd3' : '#a7f3d0';
+        ctx.fillText(
+          isCursed
+            ? '[G] CURSED ALTAR (-25% HP → +22% DMG + RELIC)'
+            : '[G] HEALING FOUNTAIN (+40% HP & +45 ESS)',
+          0,
+          -r - 12
+        );
+        ctx.fillStyle = isCursed ? '#fda4af' : '#6ee7b7';
+        ctx.fillText(isCursed ? 'CURSED ALTAR [G]' : 'HEALING FOUNTAIN [G]', 0, r + 14);
+      } else {
+        ctx.fillStyle = isCursed ? '#fda4af' : '#6ee7b7';
+        ctx.fillText(isCursed ? 'CURSED ALTAR [G]' : 'HEALING FOUNTAIN [G]', 0, r + 14);
+      }
+
+      ctx.restore();
+    }
+  }
+}
+
 function drawEmberZones(
   ctx: CanvasRenderingContext2D,
   world: ArenaWorldState,
@@ -852,13 +1314,145 @@ function drawEmberZones(
     const alpha = Math.min(1, zone.life / Math.max(0.2, zone.maxLife * 0.4));
     ctx.save();
     ctx.translate(zone.x, zone.y);
-    ctx.fillStyle = `rgba(244, 63, 94, ${(0.22 * alpha).toFixed(2)})`;
-    ctx.strokeStyle = `rgba(251, 191, 36, ${(0.65 * alpha).toFixed(2)})`;
-    ctx.lineWidth = 2;
+    if (zone.kind === 'star_mine') {
+      // Constellation Repeater exploding star mine
+      const pulse = 1 + Math.sin(timeSec * 16 + zone.id) * 0.15;
+      ctx.fillStyle = `rgba(56, 189, 248, ${(0.18 * alpha).toFixed(2)})`;
+      ctx.strokeStyle = `rgba(253, 224, 71, ${(0.75 * alpha).toFixed(2)})`;
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.arc(0, 0, zone.radius * 0.55, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 4-point Constellation Star Core
+      ctx.rotate(timeSec * 3 + zone.id);
+      ctx.scale(pulse, pulse);
+      ctx.fillStyle = '#fde047';
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -11);
+      ctx.lineTo(3.2, -3.2);
+      ctx.lineTo(11, 0);
+      ctx.lineTo(3.2, 3.2);
+      ctx.lineTo(0, 11);
+      ctx.lineTo(-3.2, 3.2);
+      ctx.lineTo(-11, 0);
+      ctx.lineTo(-3.2, -3.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = `rgba(244, 63, 94, ${(0.22 * alpha).toFixed(2)})`;
+      ctx.strokeStyle = `rgba(251, 191, 36, ${(0.65 * alpha).toFixed(2)})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, zone.radius + Math.sin(timeSec * 9 + zone.id) * 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function drawVortexVisuals(
+  ctx: CanvasRenderingContext2D,
+  world: ArenaWorldState,
+  timeSec: number
+): void {
+  for (const vx of world.vortexVisuals) {
+    const progress = Math.min(1, vx.life / Math.max(0.05, vx.maxLife));
+    const alpha = Math.max(0, 1 - progress);
+    const radius = vx.radius * (1 - progress * 0.45);
+    ctx.save();
+    ctx.translate(vx.x, vx.y);
+    ctx.fillStyle = `rgba(88, 28, 135, ${(0.28 * alpha).toFixed(2)})`;
+    ctx.strokeStyle = `rgba(232, 121, 249, ${(0.85 * alpha).toFixed(2)})`;
+    ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.arc(0, 0, zone.radius + Math.sin(timeSec * 9 + zone.id) * 2, 0, Math.PI * 2);
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+
+    ctx.strokeStyle = `rgba(56, 189, 248, ${(0.75 * alpha).toFixed(2)})`;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * 0.6, timeSec * 6, timeSec * 6 + Math.PI * 1.65);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+function drawReactionVisuals(
+  ctx: CanvasRenderingContext2D,
+  world: ArenaWorldState,
+  timeSec: number
+): void {
+  for (const rv of world.reactionVisuals) {
+    const progress = Math.min(1, rv.life / Math.max(0.05, rv.maxLife));
+    const alpha = Math.max(0, 1 - progress);
+    const outerRadius = rv.radius * (0.28 + progress * 0.72);
+    const innerRadius = rv.radius * (0.15 + progress * 0.48);
+
+    ctx.save();
+    ctx.translate(rv.x, rv.y);
+
+    if (rv.kind === 'thermal_shock') {
+      // Astral Steam explosion (Cyan + Solar Orange dual shockwave)
+      ctx.fillStyle = `rgba(34, 211, 238, ${(0.22 * alpha).toFixed(2)})`;
+      ctx.strokeStyle = `rgba(103, 232, 249, ${(0.92 * alpha).toFixed(2)})`;
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(251, 146, 60, ${(0.85 * alpha).toFixed(2)})`;
+      ctx.lineWidth = 2.4;
+      ctx.setLineDash([7, 5]);
+      ctx.beginPath();
+      ctx.arc(0, 0, innerRadius, -timeSec * 5, -timeSec * 5 + Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Floating reaction callout above blast center
+      const floatY = -24 - progress * 24;
+      ctx.font = 'bold 11px "Cinzel", Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(103, 232, 249, ${Math.min(1, alpha * 1.25).toFixed(2)})`;
+      ctx.fillText(`THERMAL SHOCK! -${rv.damageDealt}`, 0, floatY);
+    } else {
+      // Solar Meltdown (Gold + Crimson armor-sundering solar flare)
+      ctx.fillStyle = `rgba(244, 63, 94, ${(0.25 * alpha).toFixed(2)})`;
+      ctx.strokeStyle = `rgba(253, 224, 71, ${(0.95 * alpha).toFixed(2)})`;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, outerRadius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = `rgba(251, 113, 133, ${(0.88 * alpha).toFixed(2)})`;
+      ctx.lineWidth = 2.5;
+      for (let s = 0; s < 8; s++) {
+        const ang = (s * Math.PI) / 4 + progress * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(ang) * innerRadius * 0.5, Math.sin(ang) * innerRadius * 0.5);
+        ctx.lineTo(Math.cos(ang) * outerRadius * 0.92, Math.sin(ang) * outerRadius * 0.92);
+        ctx.stroke();
+      }
+
+      const floatY = -26 - progress * 26;
+      ctx.font = 'bold 11.5px "Cinzel", Georgia, serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = `rgba(253, 224, 71, ${Math.min(1, alpha * 1.25).toFixed(2)})`;
+      ctx.fillText(`SOLAR MELTDOWN! -${rv.damageDealt} · SUNDER`, 0, floatY);
+    }
+
     ctx.restore();
   }
 }
@@ -1285,6 +1879,35 @@ function drawEnemies(
       }
     }
 
+    // Elemental status aura around afflicted enemies
+    if (enemy.aiState !== 'ko') {
+      if (enemy.burnTimer > 0.04) {
+        ctx.strokeStyle = 'rgba(251, 146, 60, 0.72)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(0, 0, enemy.radius + 5 + Math.sin(timeSec * 14 + enemy.id) * 1.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      if (enemy.slowTimer > 0.04 || isFrozen) {
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.72)';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.arc(0, 0, enemy.radius + 8, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      if (enemy.sunderTimer > 0.04) {
+        ctx.strokeStyle = 'rgba(244, 63, 94, 0.85)';
+        ctx.lineWidth = 2.2;
+        ctx.setLineDash([6, 3]);
+        ctx.beginPath();
+        ctx.arc(0, 0, enemy.radius + 11, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
     if (enemy.aiState !== 'ko' && enemy.archetype !== 'archon' && enemy.hp < enemy.maxHp) {
       const barW = 32;
       const pct = Math.max(0, enemy.hp / enemy.maxHp);
@@ -1295,6 +1918,113 @@ function drawEnemies(
     }
 
     ctx.restore();
+
+    // Draw overhead Elemental Debuff Icons (Burned / Slowed / Sundered) in unscaled world coordinates above enemy head
+    if (enemy.aiState !== 'ko') {
+      const debuffs = getEnemyActiveDebuffs(enemy);
+      if (debuffs.length > 0) {
+        const hasHpBar = enemy.archetype !== 'archon' && enemy.hp < enemy.maxHp;
+        const badgeW = 32;
+        const badgeH = 15;
+        const gap = 4;
+        const totalW = debuffs.length * badgeW + (debuffs.length - 1) * gap;
+        const startX = enemy.x - totalW * 0.5;
+        const badgeY = enemy.y + bob - enemy.radius - (hasHpBar ? 31 : 21);
+
+        ctx.save();
+        for (let dIdx = 0; dIdx < debuffs.length; dIdx++) {
+          const debuff = debuffs[dIdx];
+          const bx = startX + dIdx * (badgeW + gap);
+          const pct = Math.max(0, Math.min(1, debuff.remainingSeconds / Math.max(0.1, debuff.maxSeconds)));
+
+          // Pill badge background & border
+          ctx.fillStyle = 'rgba(9, 8, 13, 0.92)';
+          ctx.strokeStyle = debuff.borderColor;
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.roundRect(bx, badgeY, badgeW, badgeH, 3.5);
+          ctx.fill();
+          ctx.stroke();
+
+          // Duration progress bar at bottom of badge
+          ctx.fillStyle = debuff.accentColor;
+          ctx.fillRect(bx + 1.5, badgeY + badgeH - 2.5, (badgeW - 3) * pct, 1.5);
+
+          // Vector elemental icon on left of badge
+          const iconCx = bx + 7.5;
+          const iconCy = badgeY + 6.5;
+          if (debuff.id === 'burned') {
+            // Flame silhouette
+            ctx.fillStyle = '#fb923c';
+            ctx.beginPath();
+            ctx.moveTo(iconCx, iconCy - 4.5);
+            ctx.quadraticCurveTo(iconCx + 4.2, iconCy - 1, iconCx + 3.0, iconCy + 3.2);
+            ctx.quadraticCurveTo(iconCx, iconCy + 4.6, iconCx - 3.0, iconCy + 3.2);
+            ctx.quadraticCurveTo(iconCx - 4.2, iconCy - 1, iconCx, iconCy - 4.5);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#fef08a';
+            ctx.beginPath();
+            ctx.arc(iconCx, iconCy + 1.2, 1.5, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (debuff.id === 'sundered') {
+            // Shattered crimson shield / armor sunder icon
+            ctx.fillStyle = '#f43f5e';
+            ctx.beginPath();
+            ctx.moveTo(iconCx, iconCy - 4.4);
+            ctx.lineTo(iconCx + 3.8, iconCy - 2.6);
+            ctx.lineTo(iconCx + 3.2, iconCy + 2.2);
+            ctx.lineTo(iconCx, iconCy + 4.5);
+            ctx.lineTo(iconCx - 3.2, iconCy + 2.2);
+            ctx.lineTo(iconCx - 3.8, iconCy - 2.6);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.strokeStyle = '#fef08a';
+            ctx.lineWidth = 1.2;
+            ctx.beginPath();
+            ctx.moveTo(iconCx + 0.8, iconCy - 3.8);
+            ctx.lineTo(iconCx - 1.0, iconCy + 0.2);
+            ctx.lineTo(iconCx + 1.0, iconCy + 0.8);
+            ctx.lineTo(iconCx - 0.8, iconCy + 3.8);
+            ctx.stroke();
+          } else {
+            // Frost / Chrono 6-point crystal icon
+            ctx.strokeStyle = '#67e8f9';
+            ctx.lineWidth = 1.4;
+            for (let a = 0; a < 3; a++) {
+              const ang = (a * Math.PI) / 3;
+              ctx.beginPath();
+              ctx.moveTo(iconCx - Math.cos(ang) * 3.8, iconCy - Math.sin(ang) * 3.8);
+              ctx.lineTo(iconCx + Math.cos(ang) * 3.8, iconCy + Math.sin(ang) * 3.8);
+              ctx.stroke();
+            }
+            ctx.fillStyle = '#e0f2fe';
+            ctx.beginPath();
+            ctx.arc(iconCx, iconCy, 1.3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Remaining timer or stack readout on right of badge
+          ctx.font = 'bold 8.5px "JetBrains Mono", monospace';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle =
+            debuff.id === 'burned'
+              ? '#fed7aa'
+              : debuff.id === 'sundered'
+                ? '#fecdd3'
+                : '#bae6fd';
+          const labelText =
+            debuff.stacks > 1
+              ? `x${debuff.stacks}`
+              : `${debuff.remainingSeconds.toFixed(1)}`;
+          ctx.fillText(labelText, bx + 13, badgeY + 6.5);
+        }
+        ctx.restore();
+      }
+    }
   }
 }
 
@@ -1340,30 +2070,49 @@ function drawPlayerAndAttack(ctx: CanvasRenderingContext2D, world: ArenaWorldSta
   }
 
   // Draw active or windup weapon arc
+  const isCurrentAwakened = Boolean(p.awakenedStances[p.stance]);
+  const evoSpec = WEAPON_EVOLUTIONS[p.stance];
+  const evoRangeMult = isCurrentAwakened ? evoSpec.bonusRangeMultiplier : 1.0;
+  const drawRange = Math.round(effectiveRange * evoRangeMult);
+
   if (p.attackPhase === 'windup' || p.attackPhase === 'active') {
     ctx.save();
     ctx.translate(p.x, p.y);
     ctx.rotate(p.attackAngle);
 
     if (p.attackPhase === 'windup') {
-      ctx.strokeStyle = 'rgba(254, 243, 199, 0.35)';
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = isCurrentAwakened
+        ? 'rgba(253, 224, 71, 0.55)'
+        : 'rgba(254, 243, 199, 0.35)';
+      ctx.lineWidth = isCurrentAwakened ? 3 : 2;
       ctx.beginPath();
-      ctx.arc(0, 0, effectiveRange * 0.75, -spec.arcRadians * 0.5, spec.arcRadians * 0.5);
+      ctx.arc(0, 0, drawRange * 0.75, -spec.arcRadians * 0.5, spec.arcRadians * 0.5);
       ctx.stroke();
     } else if (p.stance !== 'astral_bow') {
       ctx.fillStyle =
         p.stance === 'dawnblade'
-          ? 'rgba(245, 158, 11, 0.38)'
-          : 'rgba(192, 132, 252, 0.42)';
-      ctx.strokeStyle = spec.accentColor;
-      ctx.lineWidth = 4;
+          ? isCurrentAwakened
+            ? 'rgba(251, 191, 36, 0.46)'
+            : 'rgba(245, 158, 11, 0.38)'
+          : isCurrentAwakened
+            ? 'rgba(232, 121, 249, 0.46)'
+            : 'rgba(192, 132, 252, 0.42)';
+      ctx.strokeStyle = isCurrentAwakened ? evoSpec.accentColor : spec.accentColor;
+      ctx.lineWidth = isCurrentAwakened ? 5 : 4;
       ctx.beginPath();
       ctx.moveTo(0, 0);
-      ctx.arc(0, 0, effectiveRange, -spec.arcRadians * 0.5, spec.arcRadians * 0.5);
+      ctx.arc(0, 0, drawRange, -spec.arcRadians * 0.5, spec.arcRadians * 0.5);
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+
+      if (isCurrentAwakened) {
+        ctx.strokeStyle = evoSpec.secondaryColor;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, drawRange * 0.84, -spec.arcRadians * 0.48, spec.arcRadians * 0.48);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
@@ -1385,6 +2134,26 @@ function drawPlayerAndAttack(ctx: CanvasRenderingContext2D, world: ArenaWorldSta
     ctx.stroke();
   }
 
+  // Aegis Cherub Familiar sacred shield ring (or 20s recharge arc)
+  if (p.activeFamiliar === 'aegis_cherub') {
+    if (p.cherubShieldActive) {
+      ctx.strokeStyle = '#38bdf8';
+      ctx.fillStyle = 'rgba(56, 189, 248, 0.14)';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.radius + 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      const rechargePct = Math.max(0, Math.min(1, p.cherubShieldTimer / 20));
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, p.radius + 13, -Math.PI * 0.5, -Math.PI * 0.5 + rechargePct * Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   // Dash afterimage halo
   if (p.dashTimer > 0) {
     ctx.strokeStyle = '#fbbf24';
@@ -1392,6 +2161,24 @@ function drawPlayerAndAttack(ctx: CanvasRenderingContext2D, world: ArenaWorldSta
     ctx.beginPath();
     ctx.arc(0, 0, p.radius + 7, 0, Math.PI * 2);
     ctx.stroke();
+  }
+
+  // Player elemental debuff rings in arena
+  if (p.burnTimer > 0.04) {
+    ctx.strokeStyle = 'rgba(251, 146, 60, 0.85)';
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius + 5, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (p.slowTimer > 0.04) {
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.arc(0, 0, p.radius + 8, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   // Shadow
@@ -1402,14 +2189,14 @@ function drawPlayerAndAttack(ctx: CanvasRenderingContext2D, world: ArenaWorldSta
 
   const flash = p.hitFlashTimer > 0;
   ctx.fillStyle = flash ? '#ffffff' : '#1e293b';
-  ctx.strokeStyle = '#09080d';
+  ctx.strokeStyle = isCurrentAwakened ? evoSpec.accentColor : '#09080d';
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
-  ctx.fillStyle = flash ? '#ffffff' : spec.accentColor;
+  ctx.fillStyle = flash ? '#ffffff' : isCurrentAwakened ? evoSpec.accentColor : spec.accentColor;
   ctx.beginPath();
   ctx.arc(0, -2, p.radius * 0.68, 0, Math.PI * 2);
   ctx.fill();
@@ -1422,13 +2209,138 @@ function drawPlayerAndAttack(ctx: CanvasRenderingContext2D, world: ArenaWorldSta
   ctx.fill();
 
   ctx.restore();
+
+  // Draw Flying Astral Spirit Familiar Companion (Pendamping Roh Astral)
+  if (p.activeFamiliar) {
+    const famSpec = FAMILIAR_CATALOG[p.activeFamiliar];
+    const famBob = Math.sin(p.familiarOrbitAngle * 2.5) * 3.5;
+    const fx = p.familiarX;
+    const fy = p.familiarY + famBob;
+
+    // Greed Imp magnetic tether lines to nearby pickups
+    if (p.activeFamiliar === 'greed_imp' && world.pickups.length > 0) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(52, 211, 153, 0.36)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 4]);
+      for (const item of world.pickups) {
+        ctx.beginPath();
+        ctx.moveTo(fx, fy);
+        ctx.lineTo(item.x, item.y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(fx, fy);
+
+    // Subtle ground shadow below flying familiar
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 18 - famBob * 0.5, 9, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Outer astral aura ring
+    ctx.strokeStyle = famSpec.accentColor;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, 12.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    if (p.activeFamiliar === 'ember_wisp') {
+      // Blazing crimson-gold Ember Wisp spirit
+      ctx.fillStyle = '#f43f5e';
+      ctx.strokeStyle = '#09080d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, -13);
+      ctx.quadraticCurveTo(11, -3, 9, 6);
+      ctx.arc(0, 5, 9, 0, Math.PI, false);
+      ctx.quadraticCurveTo(-11, -3, 0, -13);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.arc(0, 2, 4.8, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (p.activeFamiliar === 'aegis_cherub') {
+      // Celestial winged Aegis Cherub with golden halo
+      const wingFlap = Math.sin(p.familiarOrbitAngle * 5) * 2.5;
+      ctx.fillStyle = '#bae6fd';
+      ctx.strokeStyle = '#09080d';
+      ctx.lineWidth = 1.5;
+      // Left & right wings
+      ctx.beginPath();
+      ctx.ellipse(-10, -1 + wingFlap, 6, 3.5, -0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(10, -1 + wingFlap, 6, 3.5, 0.35, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Cherub core
+      ctx.fillStyle = p.cherubShieldActive ? '#38bdf8' : '#475569';
+      ctx.strokeStyle = '#fef08a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 1, 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // Golden Halo
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.ellipse(0, -10, 6.5, 2.2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // Greed Imp: emerald treasure imp with golden horns
+      ctx.fillStyle = '#fde047';
+      ctx.beginPath();
+      ctx.moveTo(-6, -6);
+      ctx.lineTo(-10, -13);
+      ctx.lineTo(-2, -8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(6, -6);
+      ctx.lineTo(10, -13);
+      ctx.lineTo(2, -8);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#10b981';
+      ctx.strokeStyle = '#09080d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 1, 8.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(-3, 0, 1.8, 0, Math.PI * 2);
+      ctx.arc(3, 0, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
 }
 
 function drawLightningArcs(ctx: CanvasRenderingContext2D, world: ArenaWorldState): void {
   for (const arc of world.lightningArcs) {
     const alpha = Math.max(0, 1 - arc.life / arc.maxLife);
     ctx.save();
-    ctx.strokeStyle = `rgba(56, 189, 248, ${alpha.toFixed(2)})`;
+    ctx.strokeStyle = arc.color
+      ? arc.color
+      : `rgba(56, 189, 248, ${alpha.toFixed(2)})`;
+    ctx.globalAlpha = alpha;
     ctx.lineWidth = 3;
     const midX = (arc.x1 + arc.x2) * 0.5 + (Math.random() - 0.5) * 18;
     const midY = (arc.y1 + arc.y2) * 0.5 + (Math.random() - 0.5) * 18;
@@ -1445,13 +2357,63 @@ function drawProjectiles(ctx: CanvasRenderingContext2D, world: ArenaWorldState):
   for (const proj of world.projectiles) {
     ctx.save();
     ctx.translate(proj.x, proj.y);
-    ctx.fillStyle = proj.color;
-    ctx.strokeStyle = '#09080d';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, 0, proj.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+
+    if (proj.kind === 'solar_crescent') {
+      // [1] Solar Greatsword: Blazing crescent flame wave
+      const ang = proj.angle ?? Math.atan2(proj.vy, proj.vx);
+      ctx.rotate(ang);
+      ctx.fillStyle = 'rgba(251, 191, 36, 0.88)';
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.arc(-10, 0, proj.radius, -Math.PI * 0.42, Math.PI * 0.42, false);
+      ctx.arc(-22, 0, proj.radius * 0.78, Math.PI * 0.36, -Math.PI * 0.36, true);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else if (proj.kind === 'astral_arrow') {
+      // [2] Constellation Repeater: Star-tipped ricochet arrow
+      const ang = proj.angle ?? Math.atan2(proj.vy, proj.vx);
+      ctx.rotate(ang);
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(-14, 0);
+      ctx.lineTo(8, 0);
+      ctx.stroke();
+
+      ctx.fillStyle = '#7dd3fc';
+      ctx.strokeStyle = '#09080d';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(4, 0, proj.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    } else if (proj.kind === 'ember_bolt') {
+      // Ember Wisp Firebolt projectile
+      const ang = proj.angle ?? Math.atan2(proj.vy, proj.vx);
+      ctx.rotate(ang);
+      ctx.fillStyle = '#fb7185';
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.moveTo(8, 0);
+      ctx.lineTo(-6, -5);
+      ctx.lineTo(-3, 0);
+      ctx.lineTo(-6, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = proj.color;
+      ctx.strokeStyle = '#09080d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, proj.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
     ctx.restore();
   }
 }
@@ -1516,7 +2478,38 @@ function drawPausedBestiaryReticles(
 }
 
 function drawWaveBanner(ctx: CanvasRenderingContext2D, world: ArenaWorldState): void {
-  if (world.phase !== 'playing' || world.waveBannerTimer <= 0) return;
+  if (world.phase !== 'playing') return;
+
+  if (world.awakeningBannerTimer > 0 && world.lastAwakenedStance) {
+    const evo = WEAPON_EVOLUTIONS[world.lastAwakenedStance];
+    const alpha = Math.min(1, world.awakeningBannerTimer * 1.2);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = 'rgba(15, 11, 28, 0.92)';
+    ctx.strokeStyle = evo.accentColor;
+    ctx.lineWidth = 2;
+    const boxW = 470;
+    const boxH = 60;
+    const bx = (world.arenaWidth - boxW) * 0.5;
+    const by = 148;
+    ctx.fillRect(bx, by, boxW, boxH);
+    ctx.strokeRect(bx, by, boxW, boxH);
+
+    ctx.fillStyle = evo.accentColor;
+    ctx.font = '700 14px Cinzel, Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(
+      `STANCE AWAKENED: ${evo.baseName.toUpperCase()} → ${evo.evolvedName.toUpperCase()}`,
+      world.arenaWidth * 0.5,
+      by + 25
+    );
+    ctx.fillStyle = '#f4efe6';
+    ctx.font = '600 11px JetBrains Mono, monospace';
+    ctx.fillText(evo.evolvedRoleClue, world.arenaWidth * 0.5, by + 45);
+    ctx.restore();
+  }
+
+  if (world.waveBannerTimer <= 0) return;
   const alpha = Math.min(1, world.waveBannerTimer * 1.2);
   const currentRoom = world.rooms[world.currentRoomIndex];
   ctx.save();
@@ -1538,5 +2531,70 @@ function drawWaveBanner(ctx: CanvasRenderingContext2D, world: ArenaWorldState): 
     ? `STAGE ${world.stageLevel} · ROOM ${currentRoom.id + 1}/${world.rooms.length} · ${currentRoom.name.toUpperCase()}`
     : `STAGE ${world.stageLevel} · ROOM ${world.wave}/${world.totalWaves}`;
   ctx.fillText(bannerLabel, world.arenaWidth * 0.5, by + 33);
+  ctx.restore();
+}
+
+function drawCriticalStrikeCallout(ctx: CanvasRenderingContext2D, world: ArenaWorldState): void {
+  if (world.critCalloutTimer <= 0 || world.lastCritDamage <= 0) return;
+  const progress = 1 - Math.min(1, world.critCalloutTimer / 0.55);
+  const alpha = Math.min(1, world.critCalloutTimer * 2.4);
+  const floatY = world.lastCritY - 28 - progress * 24;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(world.lastCritX, floatY);
+
+  // Starburst flare behind critical callout
+  ctx.strokeStyle = '#fde047';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-42, 0);
+  ctx.lineTo(42, 0);
+  ctx.moveTo(0, -14);
+  ctx.lineTo(0, 14);
+  ctx.stroke();
+
+  const label = `CRIT! -${world.lastCritDamage}`;
+  ctx.font = '700 12px JetBrains Mono, monospace';
+  const textW = ctx.measureText(label).width;
+  const boxW = textW + 16;
+  const boxH = 22;
+
+  ctx.fillStyle = 'rgba(24, 13, 18, 0.94)';
+  ctx.strokeStyle = '#fde047';
+  ctx.lineWidth = 1.8;
+  ctx.fillRect(-boxW * 0.5, -boxH * 0.5, boxW, boxH);
+  ctx.strokeRect(-boxW * 0.5, -boxH * 0.5, boxW, boxH);
+
+  ctx.fillStyle = '#fde047';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, 0, 4);
+  ctx.restore();
+}
+
+function drawScreenShakeImpactRim(
+  ctx: CanvasRenderingContext2D,
+  world: ArenaWorldState,
+  shakeSample: ScreenShakeSample
+): void {
+  if (
+    !shakeSample.active ||
+    world.screenShakeTimer <= 0 ||
+    world.lastScreenShakeReason === 'none'
+  ) {
+    return;
+  }
+
+  const profile = SCREEN_SHAKE_PROFILES[world.lastScreenShakeReason];
+  const ratio = Math.max(
+    0,
+    Math.min(1, world.screenShakeTimer / Math.max(0.05, world.screenShakeDuration))
+  );
+
+  ctx.save();
+  ctx.globalAlpha = ratio * 0.55;
+  ctx.strokeStyle = profile.tintColor;
+  ctx.lineWidth = 6 + ratio * 8;
+  ctx.strokeRect(20, 20, world.arenaWidth - 40, world.arenaHeight - 40);
   ctx.restore();
 }

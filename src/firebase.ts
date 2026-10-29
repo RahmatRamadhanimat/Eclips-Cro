@@ -8,14 +8,19 @@ import {
   User,
 } from 'firebase/auth';
 import {
+  collection,
   doc,
   getDoc,
   getDocFromServer,
   getFirestore,
+  limit,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
@@ -96,6 +101,22 @@ export interface CloudPlayerProgress {
   runsPlayed: number;
 }
 
+export type StanceChoiceKey = 'dawnblade' | 'astral_bow' | 'chrono_scythe';
+
+export interface LeaderboardEntry {
+  uid: string;
+  displayName: string;
+  bestScore: number;
+  highestStage: number;
+  fastestClearTimeSec: number;
+  dailySeed: string;
+  dailyScore: number;
+  bossRushWaves: number;
+  bossRushScore: number;
+  favoriteStance: StanceChoiceKey;
+  isCloud?: boolean;
+}
+
 export async function signInWithGooglePopup(): Promise<User | null> {
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(auth, provider);
@@ -114,9 +135,22 @@ function sanitizeDisplayName(rawName: string | null | undefined): string {
   return trimmed.length > 0 ? trimmed : 'Solar Warden';
 }
 
+function sanitizeDailySeed(rawSeed: string | null | undefined): string {
+  const cleaned = (rawSeed || 'SOLAR-DAILY').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32);
+  return cleaned.length > 0 ? cleaned : 'SOLAR-DAILY';
+}
+
+function sanitizeStance(rawStance: string | null | undefined): StanceChoiceKey {
+  if (rawStance === 'astral_bow' || rawStance === 'chrono_scythe' || rawStance === 'dawnblade') {
+    return rawStance;
+  }
+  return 'dawnblade';
+}
+
 function clampInt(val: number, min: number, max: number): number {
   if (!Number.isFinite(val)) return min;
-  return Math.max(min, Math.min(max, Math.round(val)));
+  const rounded = Math.max(min, Math.min(max, Math.trunc(Math.round(val))));
+  return rounded === 0 ? 0 : rounded;
 }
 
 export function subscribeToCloudProgress(
@@ -169,9 +203,11 @@ export async function syncPlayerProgressToCloud(
   const safeTotalCoins = clampInt(progress.totalCoins, 0, 9999999);
   const safeRunsPlayed = clampInt(progress.runsPlayed, 0, 999999);
 
+  let opType: OperationType = OperationType.GET;
   try {
     const existingSnap = await getDoc(docRef);
     if (!existingSnap.exists()) {
+      opType = OperationType.CREATE;
       await setDoc(docRef, {
         uid: user.uid,
         displayName: safeDisplayName,
@@ -183,6 +219,7 @@ export async function syncPlayerProgressToCloud(
         updatedAt: serverTimestamp(),
       });
     } else {
+      opType = OperationType.UPDATE;
       const existingData = existingSnap.data();
       await updateDoc(docRef, {
         displayName: safeDisplayName,
@@ -201,7 +238,136 @@ export async function syncPlayerProgressToCloud(
     }
   } catch (error) {
     try {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      handleFirestoreError(error, opType, path);
+    } catch {
+      // Logged by handleFirestoreError
+    }
+  }
+}
+
+export function subscribeToGlobalLeaderboard(
+  onEntries: (entries: LeaderboardEntry[]) => void
+): () => void {
+  const path = 'leaderboardEntries';
+  const q = query(
+    collection(db, path),
+    where('bestScore', '>=', 0),
+    where('bestScore', '<=', 99999999),
+    orderBy('bestScore', 'desc'),
+    limit(20)
+  );
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const entries: LeaderboardEntry[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        entries.push({
+          uid: String(data.uid || docSnap.id),
+          displayName: sanitizeDisplayName(data.displayName),
+          bestScore: clampInt(Number(data.bestScore ?? 0), 0, 99999999),
+          highestStage: clampInt(Number(data.highestStage ?? 1), 1, 10),
+          fastestClearTimeSec: clampInt(Number(data.fastestClearTimeSec ?? 180), 1, 86400),
+          dailySeed: sanitizeDailySeed(data.dailySeed),
+          dailyScore: clampInt(Number(data.dailyScore ?? 0), 0, 99999999),
+          bossRushWaves: clampInt(Number(data.bossRushWaves ?? 0), 0, 9999),
+          bossRushScore: clampInt(Number(data.bossRushScore ?? 0), 0, 99999999),
+          favoriteStance: sanitizeStance(data.favoriteStance),
+          isCloud: true,
+        });
+      });
+      onEntries(entries);
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.LIST, path);
+      } catch {
+        // Logged by handleFirestoreError
+      }
+    }
+  );
+}
+
+export async function submitLeaderboardEntryToCloud(
+  user: User,
+  entry: {
+    displayName?: string;
+    bestScore: number;
+    highestStage: number;
+    fastestClearTimeSec: number;
+    dailySeed: string;
+    dailyScore: number;
+    bossRushWaves: number;
+    bossRushScore: number;
+    favoriteStance: StanceChoiceKey;
+  }
+): Promise<void> {
+  if (!user || !user.uid) return;
+  const path = `leaderboardEntries/${user.uid}`;
+  const docRef = doc(db, 'leaderboardEntries', user.uid);
+
+  const safeDisplayName = sanitizeDisplayName(entry.displayName || user.displayName);
+  const safeBestScore = clampInt(entry.bestScore, 0, 99999999);
+  const safeHighestStage = clampInt(entry.highestStage, 1, 10);
+  const safeFastestTime = clampInt(entry.fastestClearTimeSec, 1, 86400);
+  const safeDailySeed = sanitizeDailySeed(entry.dailySeed);
+  const safeDailyScore = clampInt(entry.dailyScore, 0, 99999999);
+  const safeBossRushWaves = clampInt(entry.bossRushWaves, 0, 9999);
+  const safeBossRushScore = clampInt(entry.bossRushScore, 0, 99999999);
+  const safeStance = sanitizeStance(entry.favoriteStance);
+
+  let opType: OperationType = OperationType.GET;
+  try {
+    const existingSnap = await getDoc(docRef);
+    if (!existingSnap.exists()) {
+      opType = OperationType.CREATE;
+      await setDoc(docRef, {
+        uid: user.uid,
+        displayName: safeDisplayName,
+        bestScore: safeBestScore,
+        highestStage: safeHighestStage,
+        fastestClearTimeSec: safeFastestTime,
+        dailySeed: safeDailySeed,
+        dailyScore: safeDailyScore,
+        bossRushWaves: safeBossRushWaves,
+        bossRushScore: safeBossRushScore,
+        favoriteStance: safeStance,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      opType = OperationType.UPDATE;
+      const ex = existingSnap.data();
+      const prevFastest = clampInt(Number(ex.fastestClearTimeSec ?? 86400), 1, 86400);
+      const nextFastest = Math.min(prevFastest, safeFastestTime);
+      const sameSeed = String(ex.dailySeed || '') === safeDailySeed;
+      const nextDailyScore = sameSeed
+        ? Math.max(clampInt(Number(ex.dailyScore ?? 0), 0, 99999999), safeDailyScore)
+        : safeDailyScore > 0
+        ? safeDailyScore
+        : clampInt(Number(ex.dailyScore ?? 0), 0, 99999999);
+      const nextDailySeed =
+        safeDailyScore > 0 || !ex.dailySeed ? safeDailySeed : sanitizeDailySeed(ex.dailySeed);
+
+      await updateDoc(docRef, {
+        displayName: safeDisplayName,
+        bestScore: Math.max(clampInt(Number(ex.bestScore ?? 0), 0, 99999999), safeBestScore),
+        highestStage: Math.max(clampInt(Number(ex.highestStage ?? 1), 1, 10), safeHighestStage),
+        fastestClearTimeSec: nextFastest,
+        dailySeed: nextDailySeed,
+        dailyScore: nextDailyScore,
+        bossRushWaves: Math.max(clampInt(Number(ex.bossRushWaves ?? 0), 0, 9999), safeBossRushWaves),
+        bossRushScore: Math.max(
+          clampInt(Number(ex.bossRushScore ?? 0), 0, 99999999),
+          safeBossRushScore
+        ),
+        favoriteStance: safeStance,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    try {
+      handleFirestoreError(error, opType, path);
     } catch {
       // Logged by handleFirestoreError
     }

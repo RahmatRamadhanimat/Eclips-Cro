@@ -137,6 +137,26 @@ class EclipseAudioEngine {
     osc.stop(now + 0.18);
   }
 
+  public playCriticalHit(): void {
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const freqs = [340, 680];
+    freqs.forEach((f, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = idx === 0 ? 'sawtooth' : 'triangle';
+      osc.frequency.setValueAtTime(this.pitchJitter(f, 0.05), now);
+      osc.frequency.exponentialRampToValueAtTime(f * 1.45, now + 0.12);
+      gain.gain.setValueAtTime(idx === 0 ? 0.13 : 0.1, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    });
+  }
+
   public playPlayerHurt(): void {
     const ctx = this.ensureContext();
     if (!ctx) return;
